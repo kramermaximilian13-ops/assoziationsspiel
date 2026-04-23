@@ -53,6 +53,7 @@ io.on('connection', (socket) => {
       phase: 'lobby',          // lobby | input | reveal | gameover
       round: 0,
       maxRounds: 10,
+      gameMode: 'points',      // 'points' | 'all-for-one'
       currentCategory: null,
       usedCategories: [],
       customCategories: (customCategories || []).filter(c => c.trim()).map(c => c.trim()),
@@ -103,13 +104,29 @@ io.on('connection', (socket) => {
     io.to(code).emit('custom-categories-updated', { customCategories: room.customCategories });
   });
 
+  // SET GAME MODE (host only, during lobby)
+  socket.on('set-game-mode', ({ code, gameMode }) => {
+    const room = getRoom(code);
+    if (!room || room.host !== socket.id || room.phase !== 'lobby') return;
+    room.gameMode = gameMode === 'all-for-one' ? 'all-for-one' : 'points';
+    io.to(code).emit('game-mode-updated', { gameMode: room.gameMode });
+  });
+
   // START GAME (host only)
-  socket.on('start-game', ({ code, maxRounds }) => {
+  socket.on('start-game', ({ code, maxRounds, gameMode }) => {
     const room = getRoom(code);
     if (!room || room.host !== socket.id) return;
     if (room.players.length < 2) return socket.emit('error', { message: 'Mindestens 2 Spieler benötigt.' });
 
-    room.maxRounds = Math.min(Math.max(parseInt(maxRounds) || 10, 3), 20);
+    room.gameMode = gameMode === 'all-for-one' ? 'all-for-one' : 'points';
+
+    if (room.gameMode === 'points') {
+      room.maxRounds = Math.min(Math.max(parseInt(maxRounds) || 10, 3), 20);
+    } else {
+      // All-for-one: no round limit — use 999 as safety ceiling
+      room.maxRounds = 999;
+    }
+
     room.phase = 'input';
     room.round = 1;
     room.answers = {};
@@ -121,7 +138,8 @@ io.on('connection', (socket) => {
       round: room.round,
       maxRounds: room.maxRounds,
       category,
-      players: room.players
+      players: room.players,
+      gameMode: room.gameMode
     });
   });
 
@@ -137,14 +155,14 @@ io.on('connection', (socket) => {
 
     room.answers[socket.id] = clean;
 
-    // broadcast "X players have answered" (without revealing words)
+    // Broadcast how many have answered (without revealing words)
     const answeredCount = Object.keys(room.answers).length;
     io.to(code).emit('answer-count', {
       answered: answeredCount,
       total: room.players.length
     });
 
-    // all answered → reveal
+    // All answered → reveal
     if (answeredCount >= room.players.length) {
       revealRound(room);
     }
@@ -156,7 +174,16 @@ io.on('connection', (socket) => {
     if (!room || room.host !== socket.id) return;
     if (room.phase !== 'reveal') return;
 
-    if (room.round >= room.maxRounds || room.roundHistory.some(r => r.match)) {
+    let shouldEnd;
+    if (room.gameMode === 'all-for-one') {
+      // End when full consensus was achieved
+      shouldEnd = room.roundHistory.some(r => r.match);
+    } else {
+      // Points mode: end only after all rounds played
+      shouldEnd = room.round >= room.maxRounds;
+    }
+
+    if (shouldEnd) {
       endGame(room);
     } else {
       startNextRound(room);
@@ -234,32 +261,55 @@ function pickCategory(room) {
 function revealRound(room) {
   room.phase = 'reveal';
 
-  // Build results: each player's answer + who matched
+  // Build results: each player's answer
   const answerList = room.players.map(p => ({
     id: p.id,
     name: p.name,
     word: room.answers[p.id] || '—'
   }));
 
-  // Check for matches: a match = at least 2 players wrote the same word
+  // Count word occurrences
   const wordCounts = {};
   Object.values(room.answers).forEach(w => {
     wordCounts[w] = (wordCounts[w] || 0) + 1;
   });
 
-  const matchingWord = Object.entries(wordCounts).find(([, count]) => count >= 2);
-  const isMatch = !!matchingWord;
-  const matchWord = matchingWord ? matchingWord[0] : null;
+  let isMatch = false;
+  let matchWord = null;
+  let partialMatchWord = null; // for all-for-one: 2+ but not all
 
-  // Award points: everyone who wrote the matching word gets points
-  // Fewer rounds = more points
-  if (isMatch) {
-    const pointsThisRound = Math.max(10 - room.round + 1, 1);
-    room.players.forEach(p => {
-      if (room.answers[p.id] === matchWord) {
-        p.score += pointsThisRound;
-      }
-    });
+  if (room.gameMode === 'all-for-one') {
+    // Full match = ALL players wrote exactly the same word
+    const validAnswers = room.players
+      .map(p => room.answers[p.id])
+      .filter(Boolean);
+    const allSame = validAnswers.length === room.players.length &&
+                    validAnswers.length > 0 &&
+                    validAnswers.every(w => w === validAnswers[0]);
+    isMatch = allSame;
+    matchWord = isMatch ? validAnswers[0] : null;
+
+    // Check for partial match (2+ but not all)
+    if (!isMatch) {
+      const partial = Object.entries(wordCounts).find(([, count]) => count >= 2);
+      partialMatchWord = partial ? partial[0] : null;
+    }
+    // No points in all-for-one mode
+  } else {
+    // Points mode: match = at least 2 players wrote the same word
+    const matchingEntry = Object.entries(wordCounts).find(([, count]) => count >= 2);
+    isMatch = !!matchingEntry;
+    matchWord = matchingEntry ? matchingEntry[0] : null;
+
+    // Award points: fewer rounds remaining = more points
+    if (isMatch) {
+      const pointsThisRound = Math.max(10 - room.round + 1, 1);
+      room.players.forEach(p => {
+        if (room.answers[p.id] === matchWord) {
+          p.score += pointsThisRound;
+        }
+      });
+    }
   }
 
   const roundResult = {
@@ -269,10 +319,17 @@ function revealRound(room) {
     answers: answerList,
     isMatch,
     matchWord,
-    players: room.players // updated scores
+    partialMatchWord,
+    players: room.players,
+    gameMode: room.gameMode
   };
 
-  room.roundHistory.push({ round: room.round, match: isMatch, matchWord, category: room.currentCategory });
+  room.roundHistory.push({
+    round: room.round,
+    match: isMatch,
+    matchWord,
+    category: room.currentCategory
+  });
   room.answers = {};
 
   io.to(room.code).emit('round-result', roundResult);
@@ -290,7 +347,8 @@ function startNextRound(room) {
     round: room.round,
     maxRounds: room.maxRounds,
     category,
-    players: room.players
+    players: room.players,
+    gameMode: room.gameMode
   });
 }
 
@@ -302,7 +360,8 @@ function endGame(room) {
   io.to(room.code).emit('game-over', {
     players: sorted,
     roundHistory: room.roundHistory,
-    totalRounds: room.round
+    totalRounds: room.round,
+    gameMode: room.gameMode
   });
 }
 
@@ -315,7 +374,8 @@ function roomView(room, socketId) {
     round: room.round,
     maxRounds: room.maxRounds,
     customCategories: room.customCategories,
-    isHost: room.host === socketId
+    isHost: room.host === socketId,
+    gameMode: room.gameMode
   };
 }
 

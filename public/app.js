@@ -12,7 +12,8 @@ let state = {
   maxRounds: 10,
   round:     0,
   submitted: false,
-  customCategories: []
+  customCategories: [],
+  gameMode:  'points'   // 'points' | 'all-for-one'
 };
 
 // ─── Screen Management ─────────────────────────────────────────────────────────
@@ -37,6 +38,110 @@ function clearError(elId) {
   const el = document.getElementById(elId);
   if (el) el.classList.add('hidden');
 }
+
+// ─── SOUND SYSTEM ─────────────────────────────────────────────────────────────
+let sfxVolume = 0.70;
+let musicVolume = 0.40;
+
+const SOUND_URLS = {
+  submit:   'https://assets.mixkit.co/sfx/preview/mixkit-select-click-1109.mp3',
+  match:    'https://assets.mixkit.co/sfx/preview/mixkit-achievement-bell-600.mp3',
+  allMatch: 'https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3',
+  noMatch:  'https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-946.mp3',
+  tick:     'https://assets.mixkit.co/sfx/preview/mixkit-typewriter-soft-note-1125.mp3',
+  start:    'https://assets.mixkit.co/sfx/preview/mixkit-magical-coin-win-1936.mp3',
+  gameOver: 'https://assets.mixkit.co/sfx/preview/mixkit-video-game-win-2016.mp3'
+};
+
+const audioCache = {};
+
+function getAudio(name) {
+  if (!audioCache[name]) {
+    const a = new Audio(SOUND_URLS[name]);
+    a.preload = 'none';
+    audioCache[name] = a;
+  }
+  return audioCache[name];
+}
+
+function playSound(name) {
+  try {
+    const a = getAudio(name);
+    a.volume = Math.max(0, Math.min(1, sfxVolume));
+    a.currentTime = 0;
+    a.play().catch(() => {}); // Ignore autoplay restrictions
+  } catch (e) {}
+}
+
+// ─── BACKGROUND MUSIC ─────────────────────────────────────────────────────────
+const bgMusic = new Audio();
+bgMusic.loop = true;
+let bgMusicPlaying = false;
+
+const musicFileInput = document.getElementById('music-file-input');
+const btnChooseMusic = document.getElementById('btn-choose-music');
+const musicControls  = document.getElementById('music-controls');
+const musicFilename  = document.getElementById('music-filename');
+const btnMusicToggle = document.getElementById('btn-music-toggle');
+
+btnChooseMusic.addEventListener('click', () => musicFileInput.click());
+
+musicFileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  bgMusic.src = url;
+  bgMusic.volume = musicVolume;
+  musicFilename.textContent = file.name.length > 24 ? file.name.slice(0, 21) + '…' : file.name;
+  musicControls.classList.remove('hidden');
+  bgMusic.play().then(() => {
+    bgMusicPlaying = true;
+    updateMusicButton();
+  }).catch(() => {
+    bgMusicPlaying = false;
+    updateMusicButton();
+  });
+});
+
+btnMusicToggle.addEventListener('click', () => {
+  if (bgMusicPlaying) {
+    bgMusic.pause();
+    bgMusicPlaying = false;
+  } else {
+    bgMusic.play().then(() => { bgMusicPlaying = true; }).catch(() => {});
+  }
+  updateMusicButton();
+});
+
+function updateMusicButton() {
+  btnMusicToggle.textContent = bgMusicPlaying ? '⏸ Pausieren' : '▶ Abspielen';
+}
+
+// ─── AUDIO PANEL ──────────────────────────────────────────────────────────────
+const btnAudioFab   = document.getElementById('btn-audio-fab');
+const audioPanel    = document.getElementById('audio-panel');
+const btnAudioClose = document.getElementById('btn-audio-close');
+const sfxSlider     = document.getElementById('sfx-volume');
+const musicSlider   = document.getElementById('music-volume');
+const sfxVolNum     = document.getElementById('sfx-vol-num');
+const musicVolNum   = document.getElementById('music-vol-num');
+
+btnAudioFab.addEventListener('click', () => {
+  audioPanel.classList.toggle('hidden');
+});
+btnAudioClose.addEventListener('click', () => {
+  audioPanel.classList.add('hidden');
+});
+
+sfxSlider.addEventListener('input', e => {
+  sfxVolume = parseInt(e.target.value) / 100;
+  sfxVolNum.textContent = e.target.value + '%';
+});
+musicSlider.addEventListener('input', e => {
+  musicVolume = parseInt(e.target.value) / 100;
+  musicVolNum.textContent = e.target.value + '%';
+  bgMusic.volume = musicVolume;
+});
 
 // ─── LANDING SCREEN ───────────────────────────────────────────────────────────
 const landingName   = document.getElementById('landing-name');
@@ -84,9 +189,13 @@ const btnStart     = document.getElementById('btn-start');
 const roundsMinus  = document.getElementById('rounds-minus');
 const roundsPlus   = document.getElementById('rounds-plus');
 const roundsDisplay = document.getElementById('rounds-display');
+const roundsGroup  = document.getElementById('rounds-group');
 const customCatInput = document.getElementById('custom-cat-input');
 const btnAddCat    = document.getElementById('btn-add-cat');
 const customCatList  = document.getElementById('custom-cat-list');
+const lobbyModeBadge = document.getElementById('lobby-mode-badge');
+const lobbyModeIcon  = document.getElementById('lobby-mode-icon');
+const lobbyModeText  = document.getElementById('lobby-mode-text');
 
 btnCopyCode.addEventListener('click', () => {
   navigator.clipboard.writeText(state.roomCode).then(() => {
@@ -124,7 +233,7 @@ function renderCustomCategories() {
   state.customCategories.forEach(cat => {
     const tag = document.createElement('span');
     tag.className = 'tag';
-    tag.innerHTML = `${cat} <button class="tag-remove" data-cat="${cat}">×</button>`;
+    tag.innerHTML = `${escapeHtml(cat)} <button class="tag-remove" data-cat="${escapeHtml(cat)}">×</button>`;
     tag.querySelector('.tag-remove').addEventListener('click', () => {
       socket.emit('remove-custom-category', { code: state.roomCode, category: cat });
     });
@@ -132,8 +241,34 @@ function renderCustomCategories() {
   });
 }
 
+// Game mode selector
+const modeSelector = document.getElementById('mode-selector');
+modeSelector.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const mode = btn.dataset.mode;
+    state.gameMode = mode;
+    modeSelector.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Toggle rounds stepper visibility
+    if (mode === 'all-for-one') {
+      roundsGroup.classList.add('hidden');
+    } else {
+      roundsGroup.classList.remove('hidden');
+    }
+
+    // Tell server about the mode change
+    socket.emit('set-game-mode', { code: state.roomCode, gameMode: mode });
+  });
+});
+
 btnStart.addEventListener('click', () => {
-  socket.emit('start-game', { code: state.roomCode, maxRounds: state.maxRounds });
+  socket.emit('start-game', {
+    code: state.roomCode,
+    maxRounds: state.maxRounds,
+    gameMode: state.gameMode
+  });
+  playSound('start');
 });
 
 function renderPlayerList(players, hostId) {
@@ -155,22 +290,44 @@ function renderPlayerList(players, hostId) {
   });
 }
 
-// ─── GAME SCREEN ──────────────────────────────────────────────────────────────
-const gameCategory   = document.getElementById('game-category');
-const wordInput      = document.getElementById('word-input');
-const btnSubmit      = document.getElementById('btn-submit');
-const submittedStatus = document.getElementById('submitted-status');
-const answerDots     = document.getElementById('answer-dots');
-const roundBadge     = document.getElementById('round-badge');
-const progressBar    = document.getElementById('progress-bar');
+function setLobbyModeBadge(gameMode) {
+  if (gameMode === 'all-for-one') {
+    lobbyModeIcon.textContent = '🤝';
+    lobbyModeText.textContent = 'All for One';
+  } else {
+    lobbyModeIcon.textContent = '🏆';
+    lobbyModeText.textContent = 'Punkte-Modus';
+  }
+}
 
-function setupGameRound({ round, maxRounds, category, players }) {
+// ─── GAME SCREEN ──────────────────────────────────────────────────────────────
+const gameCategory    = document.getElementById('game-category');
+const wordInput       = document.getElementById('word-input');
+const btnSubmit       = document.getElementById('btn-submit');
+const submittedStatus = document.getElementById('submitted-status');
+const answerDots      = document.getElementById('answer-dots');
+const roundBadge      = document.getElementById('round-badge');
+const progressBar     = document.getElementById('progress-bar');
+const gameModeBadge   = document.getElementById('game-mode-badge');
+
+function setupGameRound({ round, maxRounds, category, players, gameMode }) {
   state.round = round;
   state.submitted = false;
   state.maxRounds = maxRounds;
+  if (gameMode) state.gameMode = gameMode;
 
-  roundBadge.textContent = `Runde ${round} / ${maxRounds}`;
-  progressBar.style.width = `${((round - 1) / maxRounds) * 100}%`;
+  if (state.gameMode === 'all-for-one') {
+    roundBadge.textContent = `Runde ${round}`;
+    progressBar.style.width = '0%';
+    gameModeBadge.textContent = '🤝 All for One';
+    gameModeBadge.className = 'game-mode-pill mode-afo';
+  } else {
+    roundBadge.textContent = `Runde ${round} / ${maxRounds}`;
+    progressBar.style.width = `${((round - 1) / maxRounds) * 100}%`;
+    gameModeBadge.textContent = '🏆 Punkte';
+    gameModeBadge.className = 'game-mode-pill mode-points';
+  }
+
   gameCategory.textContent = category;
 
   wordInput.value = '';
@@ -203,97 +360,201 @@ function submitWord() {
   submittedStatus.classList.remove('hidden');
   clearError('game-error');
   socket.emit('submit-word', { code: state.roomCode, word });
+  playSound('submit');
 }
 
 // ─── REVEAL SCREEN ────────────────────────────────────────────────────────────
 const revealRoundBadge    = document.getElementById('reveal-round-badge');
 const revealCategory      = document.getElementById('reveal-category');
 const revealMatchBanner   = document.getElementById('reveal-match-banner');
+const revealAllMatchBanner = document.getElementById('reveal-all-match-banner');
+const revealPartialBanner = document.getElementById('reveal-partial-banner');
 const revealNoMatchBanner = document.getElementById('reveal-no-match-banner');
-const matchWord           = document.getElementById('match-word');
+const matchWordEl         = document.getElementById('match-word');
+const allMatchWordEl      = document.getElementById('all-match-word');
+const partialMatchWordEl  = document.getElementById('partial-match-word');
 const revealAnswers       = document.getElementById('reveal-answers');
 const revealScores        = document.getElementById('reveal-scores');
+const revealScoresSection = document.getElementById('reveal-scores-section');
 const btnNextRound        = document.getElementById('btn-next-round');
 const revealWaiting       = document.getElementById('reveal-waiting');
+const revealCountdownWrap = document.getElementById('reveal-countdown-wrap');
+const revealCountdownFill = document.getElementById('reveal-countdown-fill');
+const revealCountdownNum  = document.getElementById('reveal-countdown-num');
+
+let revealCountdownTimer = null;
+
+function startRevealCountdown() {
+  clearInterval(revealCountdownTimer);
+
+  revealCountdownWrap.classList.remove('hidden');
+  revealCountdownNum.textContent = '10';
+
+  // Reset fill bar
+  revealCountdownFill.style.transition = 'none';
+  revealCountdownFill.style.width = '100%';
+
+  // Trigger smooth animation after a brief delay
+  setTimeout(() => {
+    revealCountdownFill.style.transition = 'width 10s linear';
+    revealCountdownFill.style.width = '0%';
+  }, 60);
+
+  let secs = 10;
+  revealCountdownTimer = setInterval(() => {
+    secs--;
+    revealCountdownNum.textContent = secs;
+
+    if (secs <= 3 && secs > 0) playSound('tick');
+
+    if (secs <= 0) {
+      clearInterval(revealCountdownTimer);
+      revealCountdownWrap.classList.add('hidden');
+      if (state.isHost) {
+        socket.emit('next-round', { code: state.roomCode });
+      }
+    }
+  }, 1000);
+}
+
+function stopRevealCountdown() {
+  clearInterval(revealCountdownTimer);
+  revealCountdownWrap.classList.add('hidden');
+}
 
 function renderReveal(data) {
-  const { round, maxRounds, category, answers, isMatch, matchWord: mw, players } = data;
+  const { round, maxRounds, category, answers, isMatch, matchWord: mw,
+          partialMatchWord, players, gameMode } = data;
 
-  revealRoundBadge.textContent = `Runde ${round} / ${maxRounds}`;
+  if (gameMode) state.gameMode = gameMode;
+
+  if (state.gameMode === 'all-for-one') {
+    revealRoundBadge.textContent = `Runde ${round}`;
+  } else {
+    revealRoundBadge.textContent = `Runde ${round} / ${maxRounds}`;
+  }
   revealCategory.textContent = category;
 
-  // Match banner
-  if (isMatch) {
-    revealMatchBanner.classList.remove('hidden');
-    revealNoMatchBanner.classList.add('hidden');
-    matchWord.textContent = mw;
+  // Hide all banners first
+  revealMatchBanner.classList.add('hidden');
+  revealAllMatchBanner.classList.add('hidden');
+  revealPartialBanner.classList.add('hidden');
+  revealNoMatchBanner.classList.add('hidden');
+
+  if (state.gameMode === 'all-for-one') {
+    if (isMatch) {
+      // Full consensus!
+      revealAllMatchBanner.classList.remove('hidden');
+      allMatchWordEl.textContent = mw;
+      playSound('allMatch');
+    } else if (partialMatchWord) {
+      // Some players matched but not all
+      revealPartialBanner.classList.remove('hidden');
+      partialMatchWordEl.textContent = partialMatchWord;
+      playSound('match');
+    } else {
+      revealNoMatchBanner.classList.remove('hidden');
+      playSound('noMatch');
+    }
+    // No scores in all-for-one mode
+    revealScoresSection.classList.add('hidden');
   } else {
-    revealMatchBanner.classList.add('hidden');
-    revealNoMatchBanner.classList.remove('hidden');
+    // Points mode
+    if (isMatch) {
+      revealMatchBanner.classList.remove('hidden');
+      matchWordEl.textContent = mw;
+      playSound('match');
+    } else {
+      revealNoMatchBanner.classList.remove('hidden');
+      playSound('noMatch');
+    }
+    // Show scores
+    revealScoresSection.classList.remove('hidden');
+    const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+    revealScores.innerHTML = '';
+    sortedPlayers.forEach(p => {
+      const li = document.createElement('li');
+      li.className = 'score-item';
+      li.innerHTML = `
+        <span class="score-name">${escapeHtml(p.name)}</span>
+        <span class="score-pts">${p.score} Pkt.</span>
+      `;
+      revealScores.appendChild(li);
+    });
   }
 
   // Answers
   revealAnswers.innerHTML = '';
   answers.forEach((a, i) => {
+    const isHighlighted = isMatch
+      ? a.word === mw
+      : (partialMatchWord && a.word === partialMatchWord);
     const li = document.createElement('li');
-    li.className = `reveal-item${(isMatch && a.word === mw) ? ' is-match' : ''}`;
+    li.className = `reveal-item${isHighlighted ? ' is-match' : ''}`;
     li.style.animationDelay = `${i * 0.08}s`;
     li.innerHTML = `
       <div>
         <div class="reveal-player-name">${escapeHtml(a.name)}</div>
         <div class="reveal-word">${escapeHtml(a.word)}</div>
       </div>
-      ${(isMatch && a.word === mw) ? '<span class="match-checkmark">✓</span>' : ''}
+      ${isHighlighted ? '<span class="match-checkmark">✓</span>' : ''}
     `;
     revealAnswers.appendChild(li);
   });
 
-  // Scores
-  const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
-  revealScores.innerHTML = '';
-  sortedPlayers.forEach(p => {
-    const li = document.createElement('li');
-    li.className = 'score-item';
-    li.innerHTML = `
-      <span class="score-name">${escapeHtml(p.name)}</span>
-      <span class="score-pts">${p.score} Pkt.</span>
-    `;
-    revealScores.appendChild(li);
-  });
-
-  // Host buttons
+  // Host sees skip button; start countdown for everyone
   if (state.isHost) {
     btnNextRound.classList.remove('hidden');
+    // Update button label based on whether this is the final action
+    const isFinal = state.gameMode === 'all-for-one'
+      ? isMatch
+      : round >= maxRounds;
+    btnNextRound.textContent = isFinal ? '🏆 Ergebnisse' : '⏭ Überspringen';
     revealWaiting.classList.add('hidden');
-
-    // Check if we should show "Ende" vs "Nächste Runde"
-    const gameWon = isMatch;
-    const lastRound = round >= maxRounds;
-    if (gameWon || lastRound) {
-      btnNextRound.textContent = 'Spielende → Ergebnisse';
-    } else {
-      btnNextRound.textContent = 'Nächste Runde →';
-    }
   } else {
     btnNextRound.classList.add('hidden');
-    revealWaiting.classList.remove('hidden');
+    revealWaiting.classList.add('hidden');
   }
 
   showScreen('screen-reveal');
+  startRevealCountdown();
 }
 
 btnNextRound.addEventListener('click', () => {
+  stopRevealCountdown();
   socket.emit('next-round', { code: state.roomCode });
 });
 
 // ─── GAME OVER SCREEN ─────────────────────────────────────────────────────────
 const finalScores      = document.getElementById('final-scores');
-const roundHistory     = document.getElementById('round-history');
+const roundHistoryEl   = document.getElementById('round-history');
 const btnPlayAgain     = document.getElementById('btn-play-again');
 const gameoverWaiting  = document.getElementById('gameover-waiting');
+const gameoverTrophy   = document.getElementById('gameover-trophy');
+const gameoverTitle    = document.getElementById('gameover-title');
+const gameoverSubtitle = document.getElementById('gameover-subtitle');
 
 function renderGameOver(data) {
-  const { players, roundHistory: history, totalRounds } = data;
+  const { players, roundHistory: history, totalRounds, gameMode } = data;
+
+  if (gameMode) state.gameMode = gameMode;
+
+  playSound('gameOver');
+
+  if (state.gameMode === 'all-for-one') {
+    const winRound = history.find(r => r.match);
+    gameoverTrophy.textContent = '🥳';
+    gameoverTitle.textContent = 'Ihr habt es geschafft!';
+    if (winRound) {
+      gameoverSubtitle.textContent =
+        `In Runde ${winRound.round} wart ihr euch alle einig: "${winRound.matchWord}"`;
+      gameoverSubtitle.classList.remove('hidden');
+    }
+  } else {
+    gameoverTrophy.textContent = '🏆';
+    gameoverTitle.textContent = 'Spiel beendet!';
+    gameoverSubtitle.classList.add('hidden');
+  }
 
   // Final scores
   finalScores.innerHTML = '';
@@ -311,7 +572,7 @@ function renderGameOver(data) {
   });
 
   // Round history
-  roundHistory.innerHTML = '';
+  roundHistoryEl.innerHTML = '';
   history.forEach(r => {
     const li = document.createElement('li');
     li.className = `history-item${r.match ? ' matched' : ''}`;
@@ -320,7 +581,7 @@ function renderGameOver(data) {
       <span class="history-cat">${escapeHtml(r.category)}</span>
       <span class="history-result">${r.match ? `✓ ${escapeHtml(r.matchWord)}` : '✗'}</span>
     `;
-    roundHistory.appendChild(li);
+    roundHistoryEl.appendChild(li);
   });
 
   // Buttons
@@ -346,11 +607,13 @@ socket.on('room-created', ({ code, room }) => {
   state.isHost   = true;
   state.players  = room.players;
   state.customCategories = room.customCategories || [];
+  state.gameMode = room.gameMode || 'points';
 
   lobbyCode.textContent = code;
   renderPlayerList(room.players, room.host);
   hostControls.classList.remove('hidden');
   lobbyWaiting.classList.add('hidden');
+  lobbyModeBadge.classList.add('hidden');
   renderCustomCategories();
   showScreen('screen-lobby');
 });
@@ -359,17 +622,19 @@ socket.on('room-joined', ({ code, room }) => {
   state.roomCode = code;
   state.isHost   = false;
   state.players  = room.players;
+  state.gameMode = room.gameMode || 'points';
 
   lobbyCode.textContent = code;
   renderPlayerList(room.players, room.host);
   hostControls.classList.add('hidden');
   lobbyWaiting.classList.remove('hidden');
+  lobbyModeBadge.classList.remove('hidden');
+  setLobbyModeBadge(state.gameMode);
   showScreen('screen-lobby');
 });
 
 socket.on('player-joined', ({ players }) => {
   state.players = players;
-  // Find host: first player or existing host
   const hostId = players[0]?.id;
   renderPlayerList(players, hostId);
 });
@@ -384,13 +649,29 @@ socket.on('host-changed', ({ newHost }) => {
     state.isHost = true;
     hostControls.classList.remove('hidden');
     lobbyWaiting.classList.add('hidden');
-    // Show next round / play again buttons if in those screens
+    lobbyModeBadge.classList.add('hidden');
     btnNextRound.classList.remove('hidden');
     btnPlayAgain.classList.remove('hidden');
     revealWaiting.classList.add('hidden');
     gameoverWaiting.classList.add('hidden');
   }
   renderPlayerList(state.players, newHost);
+});
+
+socket.on('game-mode-updated', ({ gameMode }) => {
+  state.gameMode = gameMode;
+  setLobbyModeBadge(gameMode);
+  // Update host selector UI
+  if (state.isHost) {
+    modeSelector.querySelectorAll('.mode-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === gameMode);
+    });
+    if (gameMode === 'all-for-one') {
+      roundsGroup.classList.add('hidden');
+    } else {
+      roundsGroup.classList.remove('hidden');
+    }
+  }
 });
 
 socket.on('custom-categories-updated', ({ customCategories }) => {
@@ -400,6 +681,7 @@ socket.on('custom-categories-updated', ({ customCategories }) => {
 
 socket.on('game-started', (data) => {
   state.players = data.players;
+  if (data.gameMode) state.gameMode = data.gameMode;
   setupGameRound(data);
 });
 
@@ -417,11 +699,14 @@ socket.on('round-result', (data) => {
 });
 
 socket.on('next-round-start', (data) => {
+  stopRevealCountdown();
   state.players = data.players;
+  if (data.gameMode) state.gameMode = data.gameMode;
   setupGameRound(data);
 });
 
 socket.on('game-over', (data) => {
+  stopRevealCountdown();
   renderGameOver(data);
 });
 
@@ -430,6 +715,7 @@ socket.on('back-to-lobby', ({ room }) => {
   state.isHost   = room.isHost;
   state.customCategories = room.customCategories || [];
   state.maxRounds = room.maxRounds || 10;
+  state.gameMode  = room.gameMode || 'points';
   roundsDisplay.textContent = state.maxRounds;
 
   lobbyCode.textContent = room.code;
@@ -438,17 +724,25 @@ socket.on('back-to-lobby', ({ room }) => {
   if (state.isHost) {
     hostControls.classList.remove('hidden');
     lobbyWaiting.classList.add('hidden');
+    lobbyModeBadge.classList.add('hidden');
     renderCustomCategories();
+
+    // Sync mode selector
+    modeSelector.querySelectorAll('.mode-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === state.gameMode);
+    });
+    roundsGroup.classList.toggle('hidden', state.gameMode === 'all-for-one');
   } else {
     hostControls.classList.add('hidden');
     lobbyWaiting.classList.remove('hidden');
+    lobbyModeBadge.classList.remove('hidden');
+    setLobbyModeBadge(state.gameMode);
   }
 
   showScreen('screen-lobby');
 });
 
 socket.on('error', ({ message }) => {
-  // Show error on the currently active screen
   const active = document.querySelector('.screen.active');
   if (!active) return;
   const errEl = active.querySelector('.error-msg');
@@ -460,6 +754,7 @@ socket.on('error', ({ message }) => {
 });
 
 socket.on('disconnect', () => {
+  stopRevealCountdown();
   showError('landing-error', 'Verbindung getrennt. Bitte neu laden.');
   showScreen('screen-landing');
 });

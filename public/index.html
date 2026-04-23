@@ -21,7 +21,7 @@
     <div class="landing-hero">
       <div class="logo-mark">🧠</div>
       <h1>Assoziations&shy;spiel</h1>
-      <p class="subtitle">Kommt auf denselben Begriff — so schnell wie möglich.</p>
+      <p class="subtitle">Findet gemeinsam denselben Begriff!</p>
     </div>
     <div class="card">
       <div class="input-group">
@@ -66,11 +66,35 @@
     <h2 class="section-title">Spieler <span id="player-count" class="badge">0</span></h2>
     <ul id="player-list" class="player-list"></ul>
 
+    <!-- Mode badge for non-hosts -->
+    <div id="lobby-mode-badge" class="mode-info-badge hidden">
+      <span id="lobby-mode-icon">🏆</span>
+      <span id="lobby-mode-text">Punkte-Modus</span>
+    </div>
+
     <!-- Host controls -->
     <div id="host-controls" class="card hidden">
       <h3>Einstellungen</h3>
 
+      <!-- Game mode selector -->
       <div class="input-group">
+        <label>Spielmodus</label>
+        <div id="mode-selector" class="mode-selector">
+          <button class="mode-btn active" data-mode="points">
+            <span class="mode-btn-icon">🏆</span>
+            <span class="mode-btn-label">Punkte</span>
+            <span class="mode-btn-desc">10 Runden, Ranking</span>
+          </button>
+          <button class="mode-btn" data-mode="all-for-one">
+            <span class="mode-btn-icon">🤝</span>
+            <span class="mode-btn-label">All for One</span>
+            <span class="mode-btn-desc">Bis alle einig sind</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Rounds stepper (hidden in all-for-one mode) -->
+      <div id="rounds-group" class="input-group">
         <label for="max-rounds">Maximale Runden</label>
         <div class="number-stepper">
           <button class="stepper-btn" id="rounds-minus">−</button>
@@ -103,7 +127,10 @@
   ════════════════════════════════════════════════ -->
   <div id="screen-game" class="screen">
     <div class="round-header">
-      <span id="round-badge" class="round-pill">Runde 1</span>
+      <div class="round-header-row">
+        <span id="round-badge" class="round-pill">Runde 1</span>
+        <span id="game-mode-badge" class="game-mode-pill">🏆 Punkte</span>
+      </div>
       <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
     </div>
 
@@ -145,9 +172,18 @@
       <h2 id="reveal-category" class="reveal-cat"></h2>
     </div>
 
+    <!-- Match banners -->
     <div id="reveal-match-banner" class="match-banner hidden">
       <div class="match-emoji">🎉</div>
       <div class="match-text">Übereinstimmung! <strong id="match-word"></strong></div>
+    </div>
+    <div id="reveal-all-match-banner" class="all-match-banner hidden">
+      <div class="match-emoji">🥳</div>
+      <div class="match-text">Alle einig! <strong id="all-match-word"></strong></div>
+    </div>
+    <div id="reveal-partial-banner" class="partial-banner hidden">
+      <div class="match-emoji">🔥</div>
+      <div class="match-text">Nah dran! <strong id="partial-match-word"></strong> — weiter!</div>
     </div>
     <div id="reveal-no-match-banner" class="no-match-banner hidden">
       <div class="match-emoji">😅</div>
@@ -156,15 +192,23 @@
 
     <ul id="reveal-answers" class="reveal-list"></ul>
 
-    <div class="scores-section">
+    <div class="scores-section" id="reveal-scores-section">
       <h3>Punkte</h3>
       <ul id="reveal-scores" class="score-list"></ul>
     </div>
 
-    <button id="btn-next-round" class="btn btn-primary btn-large btn-full hidden">
-      Nächste Runde →
+    <!-- Auto-advance countdown -->
+    <div id="reveal-countdown-wrap" class="countdown-wrap hidden">
+      <div class="countdown-bar-track">
+        <div id="reveal-countdown-fill" class="countdown-fill"></div>
+      </div>
+      <span id="reveal-countdown-num" class="countdown-num">10</span>
+    </div>
+
+    <button id="btn-next-round" class="btn btn-secondary btn-large btn-full hidden">
+      ⏭ Überspringen
     </button>
-    <p id="reveal-waiting" class="waiting-msg hidden">Warten auf den Host…</p>
+    <p id="reveal-waiting" class="waiting-msg hidden"></p>
   </div>
 
 
@@ -173,8 +217,9 @@
   ════════════════════════════════════════════════ -->
   <div id="screen-gameover" class="screen">
     <div class="gameover-hero">
-      <div class="trophy">🏆</div>
-      <h2>Spiel beendet!</h2>
+      <div class="trophy" id="gameover-trophy">🏆</div>
+      <h2 id="gameover-title">Spiel beendet!</h2>
+      <p id="gameover-subtitle" class="gameover-subtitle hidden"></p>
     </div>
 
     <ul id="final-scores" class="final-score-list"></ul>
@@ -188,6 +233,49 @@
       Nochmal spielen
     </button>
     <p id="gameover-waiting" class="waiting-msg hidden">Warten auf den Host…</p>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       AUDIO PANEL (fixed overlay, all screens)
+  ════════════════════════════════════════════════ -->
+  <button id="btn-audio-fab" class="audio-fab" title="Lautstärke">🔊</button>
+
+  <div id="audio-panel" class="audio-panel hidden">
+    <div class="audio-panel-header">
+      <span class="audio-panel-title">🎚 Lautstärke</span>
+      <button id="btn-audio-close" class="icon-btn">✕</button>
+    </div>
+
+    <div class="audio-row">
+      <label class="audio-label">🔊 Soundeffekte</label>
+      <div class="slider-track">
+        <input type="range" id="sfx-volume" class="volume-slider" min="0" max="100" value="70" />
+      </div>
+      <span id="sfx-vol-num" class="vol-num">70%</span>
+    </div>
+
+    <div class="audio-row">
+      <label class="audio-label">🎵 Musik</label>
+      <div class="slider-track">
+        <input type="range" id="music-volume" class="volume-slider" min="0" max="100" value="40" />
+      </div>
+      <span id="music-vol-num" class="vol-num">40%</span>
+    </div>
+
+    <div class="audio-divider"></div>
+
+    <div class="audio-music-section">
+      <p class="audio-music-label">Hintergrundmusik</p>
+      <input type="file" id="music-file-input" accept="audio/*" class="hidden" />
+      <button id="btn-choose-music" class="btn btn-ghost btn-sm btn-full">
+        📁 Eigene Musik wählen
+      </button>
+      <div id="music-controls" class="music-controls hidden">
+        <span id="music-filename" class="music-filename"></span>
+        <button id="btn-music-toggle" class="btn btn-ghost btn-sm">▶ Abspielen</button>
+      </div>
+    </div>
   </div>
 
 
