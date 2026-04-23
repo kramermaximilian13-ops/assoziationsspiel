@@ -1,0 +1,26 @@
+{
+  "name": "Assoziationsspiel",
+  "short_name": "Assoziation",
+  "description": "Multiplayer-Spiel: Kommt auf denselben Begriff – so schnell wie möglich!",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8f7ff",
+  "theme_color": "#6C63FF",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "entertainment"],
+  "lang": "de"
+}

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Assoziationsspiel</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#6C63FF" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Assoziation" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════
+       SCREEN 1: LANDING
+  ════════════════════════════════════════════════ -->
+  <div id="screen-landing" class="screen active">
+    <div class="landing-hero">
+      <div class="logo-mark">🧠</div>
+      <h1>Assoziations&shy;spiel</h1>
+      <p class="subtitle">Kommt auf denselben Begriff — so schnell wie möglich.</p>
+    </div>
+    <div class="card">
+      <div class="input-group">
+        <label for="landing-name">Dein Name</label>
+        <input id="landing-name" type="text" placeholder="z.B. Maximilian" maxlength="20" autocomplete="off" />
+      </div>
+      <div class="button-stack">
+        <button id="btn-create" class="btn btn-primary btn-large">
+          <span class="btn-icon">✦</span> Raum erstellen
+        </button>
+        <button id="btn-join-show" class="btn btn-secondary btn-large">
+          <span class="btn-icon">→</span> Raum beitreten
+        </button>
+      </div>
+    </div>
+
+    <!-- Join form (hidden by default) -->
+    <div id="join-form" class="card hidden">
+      <div class="input-group">
+        <label for="join-code">Raum-Code</label>
+        <input id="join-code" type="text" placeholder="z.B. AB3XY" maxlength="5"
+               autocomplete="off" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:0.2em;font-size:1.4rem;text-align:center;" />
+      </div>
+      <button id="btn-join" class="btn btn-primary">Beitreten</button>
+    </div>
+
+    <p id="landing-error" class="error-msg hidden"></p>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       SCREEN 2: LOBBY
+  ════════════════════════════════════════════════ -->
+  <div id="screen-lobby" class="screen">
+    <div class="top-bar">
+      <div class="room-code-pill">
+        Code: <strong id="lobby-code"></strong>
+        <button id="btn-copy-code" class="icon-btn" title="Code kopieren">⧉</button>
+      </div>
+    </div>
+
+    <h2 class="section-title">Spieler <span id="player-count" class="badge">0</span></h2>
+    <ul id="player-list" class="player-list"></ul>
+
+    <!-- Host controls -->
+    <div id="host-controls" class="card hidden">
+      <h3>Einstellungen</h3>
+
+      <div class="input-group">
+        <label for="max-rounds">Maximale Runden</label>
+        <div class="number-stepper">
+          <button class="stepper-btn" id="rounds-minus">−</button>
+          <span id="rounds-display">10</span>
+          <button class="stepper-btn" id="rounds-plus">+</button>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label>Eigene Kategorien <span class="hint">(optional)</span></label>
+        <div class="tag-input-row">
+          <input id="custom-cat-input" type="text" placeholder="Kategorie eingeben…" maxlength="50" />
+          <button id="btn-add-cat" class="btn btn-ghost btn-sm">+ Hinzufügen</button>
+        </div>
+        <div id="custom-cat-list" class="tag-list"></div>
+      </div>
+
+      <button id="btn-start" class="btn btn-primary btn-large btn-full">
+        Spiel starten
+      </button>
+    </div>
+
+    <p id="lobby-waiting" class="waiting-msg hidden">Warten auf den Host…</p>
+    <p id="lobby-error" class="error-msg hidden"></p>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       SCREEN 3: GAME (Input Phase)
+  ════════════════════════════════════════════════ -->
+  <div id="screen-game" class="screen">
+    <div class="round-header">
+      <span id="round-badge" class="round-pill">Runde 1</span>
+      <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+    </div>
+
+    <div class="category-card">
+      <p class="category-label">Kategorie</p>
+      <h2 id="game-category" class="category-text"></h2>
+    </div>
+
+    <div class="answer-section">
+      <p class="answer-hint">Schreib deinen Begriff:</p>
+      <div class="answer-input-wrap">
+        <input id="word-input" type="text" placeholder="Dein Begriff…"
+               maxlength="40" autocomplete="off" autocapitalize="off" />
+        <button id="btn-submit" class="btn btn-primary btn-submit">
+          ✓
+        </button>
+      </div>
+    </div>
+
+    <div id="submitted-status" class="status-row hidden">
+      <div class="submitted-pill">✓ Eingereicht</div>
+    </div>
+
+    <div class="waiting-grid">
+      <p class="waiting-label">Warten auf Mitspieler…</p>
+      <div id="answer-dots" class="dot-row"></div>
+    </div>
+
+    <p id="game-error" class="error-msg hidden"></p>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       SCREEN 4: REVEAL
+  ════════════════════════════════════════════════ -->
+  <div id="screen-reveal" class="screen">
+    <div class="reveal-header">
+      <span id="reveal-round-badge" class="round-pill">Runde 1</span>
+      <h2 id="reveal-category" class="reveal-cat"></h2>
+    </div>
+
+    <div id="reveal-match-banner" class="match-banner hidden">
+      <div class="match-emoji">🎉</div>
+      <div class="match-text">Übereinstimmung! <strong id="match-word"></strong></div>
+    </div>
+    <div id="reveal-no-match-banner" class="no-match-banner hidden">
+      <div class="match-emoji">😅</div>
+      <div class="match-text">Noch keine Übereinstimmung</div>
+    </div>
+
+    <ul id="reveal-answers" class="reveal-list"></ul>
+
+    <div class="scores-section">
+      <h3>Punkte</h3>
+      <ul id="reveal-scores" class="score-list"></ul>
+    </div>
+
+    <button id="btn-next-round" class="btn btn-primary btn-large btn-full hidden">
+      Nächste Runde →
+    </button>
+    <p id="reveal-waiting" class="waiting-msg hidden">Warten auf den Host…</p>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       SCREEN 5: GAME OVER
+  ════════════════════════════════════════════════ -->
+  <div id="screen-gameover" class="screen">
+    <div class="gameover-hero">
+      <div class="trophy">🏆</div>
+      <h2>Spiel beendet!</h2>
+    </div>
+
+    <ul id="final-scores" class="final-score-list"></ul>
+
+    <div id="round-history-section">
+      <h3>Rundenübersicht</h3>
+      <ul id="round-history" class="round-history-list"></ul>
+    </div>
+
+    <button id="btn-play-again" class="btn btn-primary btn-large btn-full hidden">
+      Nochmal spielen
+    </button>
+    <p id="gameover-waiting" class="waiting-msg hidden">Warten auf den Host…</p>
+  </div>
+
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
