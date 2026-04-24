@@ -80,16 +80,8 @@
       <div class="input-group">
         <label>Spielmodus</label>
         <div id="mode-selector" class="mode-selector">
-          <button class="mode-btn active" data-mode="points">
-            <span class="mode-btn-icon">🏆</span>
-            <span class="mode-btn-label">Punkte</span>
-            <span class="mode-btn-desc">10 Runden, Ranking</span>
-          </button>
-          <button class="mode-btn" data-mode="all-for-one">
-            <span class="mode-btn-icon">🤝</span>
-            <span class="mode-btn-label">All for One</span>
-            <span class="mode-btn-desc">Bis alle einig sind</span>
-          </button>
+          <button class="mode-btn active" data-mode="points">🏆 Punkte</button>
+          <button class="mode-btn" data-mode="all-for-one">🤝 All for One</button>
         </div>
       </div>
 
@@ -134,9 +126,17 @@
       <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
     </div>
 
-    <div class="category-card">
-      <p class="category-label">Kategorie</p>
+    <div id="category-card" class="category-card">
+      <p id="category-label" class="category-label">Kategorie</p>
       <h2 id="game-category" class="category-text"></h2>
+    </div>
+
+    <!-- 10-second round countdown (appears after first player submits) -->
+    <div id="game-timer-wrap" class="countdown-wrap hidden">
+      <div class="countdown-bar-track">
+        <div id="game-timer-fill" class="countdown-fill"></div>
+      </div>
+      <span id="game-timer-num" class="countdown-num">10</span>
     </div>
 
     <div class="answer-section">

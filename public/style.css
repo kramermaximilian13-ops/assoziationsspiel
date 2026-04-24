@@ -244,38 +244,38 @@ input[type="text"]:focus {
   align-self: flex-start;
 }
 
-/* ─── Game Mode Selector ──────────────────────────────────────────────────── */
+/* ─── Game Mode Selector (segmented control) ─────────────────────────────── */
 .mode-selector {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  display: flex;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 .mode-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 14px 10px;
+  flex: 1;
+  padding: 11px 8px;
+  border: none;
   background: var(--bg);
-  border: 2px solid var(--border);
-  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
+  color: var(--text-muted);
   font-family: var(--font);
   transition: all var(--transition);
   text-align: center;
+  white-space: nowrap;
 }
-.mode-btn:hover {
-  border-color: var(--primary);
-  background: var(--primary-light);
+.mode-btn + .mode-btn {
+  border-left: 1.5px solid var(--border);
 }
 .mode-btn.active {
-  border-color: var(--primary);
-  background: var(--primary-light);
-  box-shadow: 0 0 0 3px rgba(108,99,255,0.15);
+  background: var(--primary);
+  color: #fff;
 }
-.mode-btn-icon { font-size: 1.6rem; line-height: 1; }
-.mode-btn-label { font-size: 0.9rem; font-weight: 700; color: var(--text); }
-.mode-btn-desc { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
+.mode-btn:hover:not(.active) {
+  background: var(--primary-light);
+  color: var(--primary);
+}
 
 /* ─── Number Stepper ──────────────────────────────────────────────────────── */
 .number-stepper {
@@ -831,8 +831,8 @@ input[type="text"]:focus {
   .error-msg { background: #450a0a; border-color: #7f1d1d; }
   .game-mode-pill.mode-points { background: #0c2844; color: #7dd3fc; }
   .game-mode-pill.mode-afo    { background: #431407; color: #fb923c; }
-  .mode-btn { background: #0f0e1a; border-color: #2e2a55; }
-  .mode-btn:hover, .mode-btn.active { background: #2e2a55; border-color: var(--primary); }
-  .mode-btn-label { color: #f0eeff; }
+  .mode-btn { background: #0f0e1a; }
+  .mode-btn.active { background: var(--primary); color: #fff; }
+  .mode-btn:hover:not(.active) { background: #2e2a55; color: var(--primary); }
   .countdown-wrap { background: #1a1830; }
 }

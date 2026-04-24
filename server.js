@@ -6,14 +6,18 @@ const CATEGORIES = require('./categories');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*' }
-});
+const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ─── Constants ─────────────────────────────────────────────────────────────────
+const ROUND_TIMER_MS   = 10_000;  // 10 s after first answer
+const GRACE_PERIOD_MS  = 30_000;  // 30 s to reconnect before removal
+
 // ─── In-memory state ───────────────────────────────────────────────────────────
-const rooms = {}; // roomCode → RoomState
+const rooms            = {};       // roomCode → RoomState
+const roundTimers      = new Map(); // roomCode → timeoutId
+const gracePeriodTimers = new Map(); // oldSocketId → { code, timerId, player }
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -21,14 +25,11 @@ function generateCode() {
   for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
 }
-
-function getRoom(code) {
-  return rooms[code] || null;
-}
+function getRoom(code) { return rooms[code] || null; }
 
 function sanitize(str) {
   return (str || '').trim().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9äöüß\s]/g, '')
     .trim();
 }
@@ -50,14 +51,15 @@ io.on('connection', (socket) => {
         score: 0,
         ready: false
       }],
-      phase: 'lobby',          // lobby | input | reveal | gameover
+      disconnectedPlayers: [],   // players in grace period
+      phase: 'lobby',
       round: 0,
       maxRounds: 10,
-      gameMode: 'points',      // 'points' | 'all-for-one'
+      gameMode: 'points',        // 'points' | 'all-for-one'
       currentCategory: null,
       usedCategories: [],
       customCategories: (customCategories || []).filter(c => c.trim()).map(c => c.trim()),
-      answers: {},             // socketId → word
+      answers: {},
       roundHistory: []
     };
 
@@ -68,26 +70,60 @@ io.on('connection', (socket) => {
 
   // JOIN ROOM
   socket.on('join-room', ({ code, playerName }) => {
-    const room = getRoom(code.toUpperCase());
+    const upperCode = code.toUpperCase();
+    const room = getRoom(upperCode);
     if (!room) return socket.emit('error', { message: 'Raum nicht gefunden.' });
+
+    const cleanName = playerName.trim().slice(0, 20);
+
+    // ── Reconnect: check active players first ─────────────────────────────
+    const activePlayer = room.players.find(p => p.name === cleanName && p.id !== socket.id);
+    if (activePlayer) {
+      const oldId = activePlayer.id;
+      if (room.host === oldId) room.host = socket.id;
+      activePlayer.id = socket.id;
+      socket.join(upperCode);
+      socket.emit('room-joined', { code: room.code, room: roomView(room, socket.id) });
+      io.to(room.code).emit('player-joined', { player: activePlayer, players: room.players });
+      return;
+    }
+
+    // ── Reconnect from grace period ───────────────────────────────────────
+    const disconnected = room.disconnectedPlayers.find(p => p.name === cleanName);
+    if (disconnected) {
+      const oldId = disconnected.id;
+
+      // Cancel removal timer
+      if (gracePeriodTimers.has(oldId)) {
+        clearTimeout(gracePeriodTimers.get(oldId).timerId);
+        gracePeriodTimers.delete(oldId);
+      }
+
+      // Restore to active players
+      room.disconnectedPlayers = room.disconnectedPlayers.filter(p => p !== disconnected);
+      disconnected.id = socket.id;
+      room.players.push(disconnected);
+      if (room.host === oldId) room.host = socket.id;
+
+      socket.join(upperCode);
+      socket.emit('room-joined', { code: room.code, room: roomView(room, socket.id) });
+      io.to(room.code).emit('player-joined', { player: disconnected, players: room.players });
+      return;
+    }
+
+    // ── New player: only allowed in lobby ─────────────────────────────────
     if (room.phase !== 'lobby') return socket.emit('error', { message: 'Das Spiel läuft bereits.' });
     if (room.players.length >= 8) return socket.emit('error', { message: 'Der Raum ist voll (max. 8 Spieler).' });
-    if (room.players.find(p => p.id === socket.id)) return socket.emit('error', { message: 'Du bist bereits im Raum.' });
 
-    const player = {
-      id: socket.id,
-      name: playerName.trim().slice(0, 20),
-      score: 0,
-      ready: false
-    };
+    const player = { id: socket.id, name: cleanName, score: 0, ready: false };
     room.players.push(player);
-    socket.join(code);
+    socket.join(upperCode);
 
-    socket.emit('room-joined', { code, room: roomView(room, socket.id) });
-    socket.to(code).emit('player-joined', { player, players: room.players });
+    socket.emit('room-joined', { code: room.code, room: roomView(room, socket.id) });
+    socket.to(room.code).emit('player-joined', { player, players: room.players });
   });
 
-  // ADD CUSTOM CATEGORIES (host only, during lobby)
+  // ADD CUSTOM CATEGORIES (host only)
   socket.on('add-custom-categories', ({ code, categories }) => {
     const room = getRoom(code);
     if (!room || room.host !== socket.id) return;
@@ -104,7 +140,7 @@ io.on('connection', (socket) => {
     io.to(code).emit('custom-categories-updated', { customCategories: room.customCategories });
   });
 
-  // SET GAME MODE (host only, during lobby)
+  // SET GAME MODE (host only, lobby only)
   socket.on('set-game-mode', ({ code, gameMode }) => {
     const room = getRoom(code);
     if (!room || room.host !== socket.id || room.phase !== 'lobby') return;
@@ -119,25 +155,25 @@ io.on('connection', (socket) => {
     if (room.players.length < 2) return socket.emit('error', { message: 'Mindestens 2 Spieler benötigt.' });
 
     room.gameMode = gameMode === 'all-for-one' ? 'all-for-one' : 'points';
-
-    if (room.gameMode === 'points') {
-      room.maxRounds = Math.min(Math.max(parseInt(maxRounds) || 10, 3), 20);
-    } else {
-      // All-for-one: no round limit — use 999 as safety ceiling
-      room.maxRounds = 999;
-    }
+    room.maxRounds = room.gameMode === 'points'
+      ? Math.min(Math.max(parseInt(maxRounds) || 10, 3), 20)
+      : 999;
 
     room.phase = 'input';
     room.round = 1;
     room.answers = {};
 
-    const category = pickCategory(room);
-    room.currentCategory = category;
+    // All for One: no category — players converge from scratch
+    if (room.gameMode === 'all-for-one') {
+      room.currentCategory = null;
+    } else {
+      room.currentCategory = pickCategory(room);
+    }
 
     io.to(code).emit('game-started', {
       round: room.round,
       maxRounds: room.maxRounds,
-      category,
+      category: room.currentCategory,
       players: room.players,
       gameMode: room.gameMode
     });
@@ -149,21 +185,33 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'input') return;
     const player = room.players.find(p => p.id === socket.id);
     if (!player) return;
+    if (room.answers[socket.id] !== undefined) return; // already submitted
 
     const clean = sanitize(word);
     if (!clean) return socket.emit('error', { message: 'Bitte gib einen Begriff ein.' });
 
     room.answers[socket.id] = clean;
 
-    // Broadcast how many have answered (without revealing words)
     const answeredCount = Object.keys(room.answers).length;
+
+    // First answer → start 10-second round timer
+    if (answeredCount === 1 && !roundTimers.has(code)) {
+      const timerId = setTimeout(() => {
+        roundTimers.delete(code);
+        if (room.phase === 'input') revealRound(room);
+      }, ROUND_TIMER_MS);
+      roundTimers.set(code, timerId);
+      io.to(code).emit('round-timer-start', { seconds: ROUND_TIMER_MS / 1000 });
+    }
+
     io.to(code).emit('answer-count', {
       answered: answeredCount,
       total: room.players.length
     });
 
-    // All answered → reveal
+    // All answered → reveal immediately
     if (answeredCount >= room.players.length) {
+      clearRoundTimer(code);
       revealRound(room);
     }
   });
@@ -171,29 +219,21 @@ io.on('connection', (socket) => {
   // NEXT ROUND (host only)
   socket.on('next-round', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.host !== socket.id) return;
-    if (room.phase !== 'reveal') return;
+    if (!room || room.host !== socket.id || room.phase !== 'reveal') return;
 
-    let shouldEnd;
-    if (room.gameMode === 'all-for-one') {
-      // End when full consensus was achieved
-      shouldEnd = room.roundHistory.some(r => r.match);
-    } else {
-      // Points mode: end only after all rounds played
-      shouldEnd = room.round >= room.maxRounds;
-    }
+    const shouldEnd = room.gameMode === 'all-for-one'
+      ? room.roundHistory.some(r => r.match)
+      : room.round >= room.maxRounds;
 
-    if (shouldEnd) {
-      endGame(room);
-    } else {
-      startNextRound(room);
-    }
+    if (shouldEnd) endGame(room);
+    else startNextRound(room);
   });
 
   // PLAY AGAIN (host only)
   socket.on('play-again', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.host !== socket.id) return;
+    clearRoundTimer(code);
     room.phase = 'lobby';
     room.round = 0;
     room.answers = {};
@@ -209,77 +249,91 @@ io.on('connection', (socket) => {
       const idx = room.players.findIndex(p => p.id === socket.id);
       if (idx === -1) continue;
 
-      room.players.splice(idx, 1);
+      const player = room.players.splice(idx, 1)[0];
 
-      if (room.players.length === 0) {
+      // Notify others immediately
+      io.to(code).emit('player-left', { id: socket.id, players: room.players });
+
+      // Empty room → clean up
+      if (room.players.length === 0 && room.disconnectedPlayers.length === 0) {
+        clearRoundTimer(code);
         delete rooms[code];
         return;
       }
 
-      // Transfer host if needed
-      if (room.host === socket.id) {
+      // Transfer host if needed (pick from active players)
+      if (room.host === socket.id && room.players.length > 0) {
         room.host = room.players[0].id;
         io.to(code).emit('host-changed', { newHost: room.host });
       }
 
-      io.to(code).emit('player-left', {
-        id: socket.id,
-        players: room.players
-      });
-
-      // If game running and now everyone else answered, reveal
+      // Remove their pending answer; check if everyone else finished
       if (room.phase === 'input') {
         delete room.answers[socket.id];
-        const answeredCount = Object.keys(room.answers).length;
-        if (answeredCount >= room.players.length && room.players.length > 0) {
+        if (room.players.length > 0 &&
+            Object.keys(room.answers).length >= room.players.length) {
+          clearRoundTimer(code);
           revealRound(room);
         }
       }
+
+      // Grace period: keep player data for 30 s so they can rejoin
+      room.disconnectedPlayers.push(player);
+      const timerId = setTimeout(() => {
+        gracePeriodTimers.delete(socket.id);
+        room.disconnectedPlayers = room.disconnectedPlayers.filter(p => p !== player);
+        // If room is now fully empty, clean it up
+        if (room.players.length === 0 && room.disconnectedPlayers.length === 0) {
+          clearRoundTimer(code);
+          delete rooms[code];
+        }
+      }, GRACE_PERIOD_MS);
+
+      gracePeriodTimers.set(socket.id, { code, timerId, player });
+      break;
     }
   });
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function pickCategory(room) {
-  const pool = [
-    ...CATEGORIES,
-    ...room.customCategories
-  ].filter(c => !room.usedCategories.includes(c));
+function clearRoundTimer(code) {
+  if (roundTimers.has(code)) {
+    clearTimeout(roundTimers.get(code));
+    roundTimers.delete(code);
+  }
+}
 
+function pickCategory(room) {
+  const pool = [...CATEGORIES, ...room.customCategories]
+    .filter(c => !room.usedCategories.includes(c));
   if (pool.length === 0) {
-    // reset if exhausted
     room.usedCategories = [];
     return pickCategory(room);
   }
-
   const cat = pool[Math.floor(Math.random() * pool.length)];
   room.usedCategories.push(cat);
   return cat;
 }
 
 function revealRound(room) {
+  clearRoundTimer(room.code);
   room.phase = 'reveal';
 
-  // Build results: each player's answer
   const answerList = room.players.map(p => ({
     id: p.id,
     name: p.name,
     word: room.answers[p.id] || '—'
   }));
 
-  // Count word occurrences
   const wordCounts = {};
   Object.values(room.answers).forEach(w => {
     wordCounts[w] = (wordCounts[w] || 0) + 1;
   });
 
-  let isMatch = false;
-  let matchWord = null;
-  let partialMatchWord = null; // for all-for-one: 2+ but not all
+  let isMatch = false, matchWord = null, partialMatchWord = null;
 
   if (room.gameMode === 'all-for-one') {
-    // Full match = ALL players wrote exactly the same word
     const validAnswers = room.players
       .map(p => room.answers[p.id])
       .filter(Boolean);
@@ -289,25 +343,19 @@ function revealRound(room) {
     isMatch = allSame;
     matchWord = isMatch ? validAnswers[0] : null;
 
-    // Check for partial match (2+ but not all)
     if (!isMatch) {
       const partial = Object.entries(wordCounts).find(([, count]) => count >= 2);
       partialMatchWord = partial ? partial[0] : null;
     }
-    // No points in all-for-one mode
   } else {
-    // Points mode: match = at least 2 players wrote the same word
-    const matchingEntry = Object.entries(wordCounts).find(([, count]) => count >= 2);
-    isMatch = !!matchingEntry;
-    matchWord = matchingEntry ? matchingEntry[0] : null;
+    const matchEntry = Object.entries(wordCounts).find(([, count]) => count >= 2);
+    isMatch = !!matchEntry;
+    matchWord = matchEntry ? matchEntry[0] : null;
 
-    // Award points: fewer rounds remaining = more points
     if (isMatch) {
-      const pointsThisRound = Math.max(10 - room.round + 1, 1);
+      const pts = Math.max(10 - room.round + 1, 1);
       room.players.forEach(p => {
-        if (room.answers[p.id] === matchWord) {
-          p.score += pointsThisRound;
-        }
+        if (room.answers[p.id] === matchWord) p.score += pts;
       });
     }
   }
@@ -336,27 +384,26 @@ function revealRound(room) {
 }
 
 function startNextRound(room) {
+  clearRoundTimer(room.code);
   room.phase = 'input';
   room.round++;
   room.answers = {};
 
-  const category = pickCategory(room);
-  room.currentCategory = category;
+  room.currentCategory = room.gameMode === 'all-for-one' ? null : pickCategory(room);
 
   io.to(room.code).emit('next-round-start', {
     round: room.round,
     maxRounds: room.maxRounds,
-    category,
+    category: room.currentCategory,
     players: room.players,
     gameMode: room.gameMode
   });
 }
 
 function endGame(room) {
+  clearRoundTimer(room.code);
   room.phase = 'gameover';
-
   const sorted = [...room.players].sort((a, b) => b.score - a.score);
-
   io.to(room.code).emit('game-over', {
     players: sorted,
     roundHistory: room.roundHistory,

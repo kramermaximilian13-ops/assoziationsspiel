@@ -302,6 +302,8 @@ function setLobbyModeBadge(gameMode) {
 
 // ─── GAME SCREEN ──────────────────────────────────────────────────────────────
 const gameCategory    = document.getElementById('game-category');
+const categoryCard    = document.getElementById('category-card');
+const categoryLabel   = document.getElementById('category-label');
 const wordInput       = document.getElementById('word-input');
 const btnSubmit       = document.getElementById('btn-submit');
 const submittedStatus = document.getElementById('submitted-status');
@@ -309,6 +311,39 @@ const answerDots      = document.getElementById('answer-dots');
 const roundBadge      = document.getElementById('round-badge');
 const progressBar     = document.getElementById('progress-bar');
 const gameModeBadge   = document.getElementById('game-mode-badge');
+const gameTimerWrap   = document.getElementById('game-timer-wrap');
+const gameTimerFill   = document.getElementById('game-timer-fill');
+const gameTimerNum    = document.getElementById('game-timer-num');
+
+let gameCountdownTimer = null;
+
+function stopGameCountdown() {
+  clearInterval(gameCountdownTimer);
+  gameCountdownTimer = null;
+  gameTimerWrap.classList.add('hidden');
+}
+
+function startGameCountdown(seconds) {
+  stopGameCountdown();
+  gameTimerWrap.classList.remove('hidden');
+  gameTimerNum.textContent = seconds;
+
+  // Reset bar
+  gameTimerFill.style.transition = 'none';
+  gameTimerFill.style.width = '100%';
+  setTimeout(() => {
+    gameTimerFill.style.transition = `width ${seconds}s linear`;
+    gameTimerFill.style.width = '0%';
+  }, 60);
+
+  let secs = seconds;
+  gameCountdownTimer = setInterval(() => {
+    secs--;
+    gameTimerNum.textContent = secs;
+    if (secs <= 3 && secs > 0) playSound('tick');
+    if (secs <= 0) stopGameCountdown();
+  }, 1000);
+}
 
 function setupGameRound({ round, maxRounds, category, players, gameMode }) {
   state.round = round;
@@ -316,19 +351,25 @@ function setupGameRound({ round, maxRounds, category, players, gameMode }) {
   state.maxRounds = maxRounds;
   if (gameMode) state.gameMode = gameMode;
 
+  stopGameCountdown();
+
   if (state.gameMode === 'all-for-one') {
     roundBadge.textContent = `Runde ${round}`;
     progressBar.style.width = '0%';
     gameModeBadge.textContent = '🤝 All for One';
     gameModeBadge.className = 'game-mode-pill mode-afo';
+    // No category in All for One — hide card, show neutral prompt
+    categoryCard.classList.add('hidden');
   } else {
     roundBadge.textContent = `Runde ${round} / ${maxRounds}`;
     progressBar.style.width = `${((round - 1) / maxRounds) * 100}%`;
     gameModeBadge.textContent = '🏆 Punkte';
     gameModeBadge.className = 'game-mode-pill mode-points';
+    // Show category
+    categoryCard.classList.remove('hidden');
+    categoryLabel.textContent = 'Kategorie';
+    gameCategory.textContent = category || '';
   }
-
-  gameCategory.textContent = category;
 
   wordInput.value = '';
   wordInput.disabled = false;
@@ -693,13 +734,19 @@ socket.on('answer-count', ({ answered, total }) => {
   });
 });
 
+socket.on('round-timer-start', ({ seconds }) => {
+  startGameCountdown(seconds);
+});
+
 socket.on('round-result', (data) => {
+  stopGameCountdown();
   state.players = data.players;
   renderReveal(data);
 });
 
 socket.on('next-round-start', (data) => {
   stopRevealCountdown();
+  stopGameCountdown();
   state.players = data.players;
   if (data.gameMode) state.gameMode = data.gameMode;
   setupGameRound(data);
@@ -707,6 +754,7 @@ socket.on('next-round-start', (data) => {
 
 socket.on('game-over', (data) => {
   stopRevealCountdown();
+  stopGameCountdown();
   renderGameOver(data);
 });
 
