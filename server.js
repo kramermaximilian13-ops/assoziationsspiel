@@ -31,7 +31,50 @@ function sanitize(str) {
   return (str || '').trim().toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9äöüß\s]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
+}
+
+// ─── Fuzzy Matching ────────────────────────────────────────────────────────────
+
+function levenshtein(a, b) {
+  if (Math.abs(a.length - b.length) > 3) return 99;
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Two words are "fuzzy equal" if they're close enough (typos / singular-plural)
+function fuzzyMatch(a, b) {
+  if (a === b) return true;
+  const len = Math.max(a.length, b.length);
+  if (len < 4) return false;           // short words must match exactly
+  const maxDist = len <= 6 ? 1 : 2;   // 1 typo for ≤6 chars, 2 for longer
+  return levenshtein(a, b) <= maxDist;
+}
+
+// Group { socketId: word } answers into fuzzy equivalence clusters
+// Returns [{ canonical, playerIds }]
+function fuzzyGroups(answers) {
+  const groups = [];
+  for (const [id, word] of Object.entries(answers)) {
+    if (!word) continue;
+    const hit = groups.find(g => fuzzyMatch(word, g.canonical));
+    if (hit) {
+      hit.playerIds.push(id);
+    } else {
+      groups.push({ canonical: word, playerIds: [id] });
+    }
+  }
+  return groups;
 }
 
 // ─── Socket Logic ──────────────────────────────────────────────────────────────
@@ -326,36 +369,34 @@ function revealRound(room) {
     word: room.answers[p.id] || '—'
   }));
 
-  const wordCounts = {};
-  Object.values(room.answers).forEach(w => {
-    wordCounts[w] = (wordCounts[w] || 0) + 1;
-  });
+  // Build fuzzy groups from submitted answers
+  const groups = fuzzyGroups(room.answers);
+  // Sort by group size descending
+  groups.sort((a, b) => b.playerIds.length - a.playerIds.length);
+  const bestGroup = groups[0] || { canonical: null, playerIds: [] };
 
   let isMatch = false, matchWord = null, partialMatchWord = null;
 
   if (room.gameMode === 'all-for-one') {
-    const validAnswers = room.players
-      .map(p => room.answers[p.id])
-      .filter(Boolean);
-    const allSame = validAnswers.length === room.players.length &&
-                    validAnswers.length > 0 &&
-                    validAnswers.every(w => w === validAnswers[0]);
-    isMatch = allSame;
-    matchWord = isMatch ? validAnswers[0] : null;
+    const answeredCount = Object.values(room.answers).filter(Boolean).length;
+    // Win condition: ALL players are in the same fuzzy group
+    isMatch = answeredCount === room.players.length &&
+              answeredCount > 0 &&
+              bestGroup.playerIds.length === room.players.length;
+    matchWord = isMatch ? bestGroup.canonical : null;
 
-    if (!isMatch) {
-      const partial = Object.entries(wordCounts).find(([, count]) => count >= 2);
-      partialMatchWord = partial ? partial[0] : null;
+    if (!isMatch && bestGroup.playerIds.length >= 2) {
+      partialMatchWord = bestGroup.canonical;
     }
   } else {
-    const matchEntry = Object.entries(wordCounts).find(([, count]) => count >= 2);
-    isMatch = !!matchEntry;
-    matchWord = matchEntry ? matchEntry[0] : null;
+    // Points mode: any group with 2+ players counts as a match
+    isMatch = bestGroup.playerIds.length >= 2;
+    matchWord = isMatch ? bestGroup.canonical : null;
 
     if (isMatch) {
       const pts = Math.max(10 - room.round + 1, 1);
       room.players.forEach(p => {
-        if (room.answers[p.id] === matchWord) p.score += pts;
+        if (bestGroup.playerIds.includes(p.id)) p.score += pts;
       });
     }
   }

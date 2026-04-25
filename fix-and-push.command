@@ -12,13 +12,12 @@ echo "📦 Änderungen hinzufügen..."
 git add -A
 
 echo "💾 Commit erstellen..."
-git commit -m "fix: disconnect grace period, 10s round timer, All for One no-category, cleaner mode selector
+git commit -m "fix: fuzzy matching, Web Audio sounds, visible sound button, cache bust
 
-- Players now have 30s grace period to reconnect (no more lobby kicks)
-- 10s countdown starts after first answer is submitted
-- All for One: no category shown - converge on any word freely
-- Mode selector redesigned as clean segmented control
-- Game screen shows countdown bar when timer is running"
+- Fuzzy word matching: typos and plurals now count as the same answer
+- Sounds now use Web Audio API (no CDN dependency, always works)
+- Sound button moved to top-right, always visible on all screens
+- Service worker cache bumped to v3 (forces fresh JS/CSS for all users)"
 
 echo ""
 echo "📤 Push zu GitHub..."

@@ -39,37 +39,66 @@ function clearError(elId) {
   if (el) el.classList.add('hidden');
 }
 
-// ─── SOUND SYSTEM ─────────────────────────────────────────────────────────────
+// ─── SOUND SYSTEM (Web Audio API — no CDN needed) ─────────────────────────────
 let sfxVolume = 0.70;
 let musicVolume = 0.40;
+let _audioCtx = null;
 
-const SOUND_URLS = {
-  submit:   'https://assets.mixkit.co/sfx/preview/mixkit-select-click-1109.mp3',
-  match:    'https://assets.mixkit.co/sfx/preview/mixkit-achievement-bell-600.mp3',
-  allMatch: 'https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3',
-  noMatch:  'https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-946.mp3',
-  tick:     'https://assets.mixkit.co/sfx/preview/mixkit-typewriter-soft-note-1125.mp3',
-  start:    'https://assets.mixkit.co/sfx/preview/mixkit-magical-coin-win-1936.mp3',
-  gameOver: 'https://assets.mixkit.co/sfx/preview/mixkit-video-game-win-2016.mp3'
-};
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
 
-const audioCache = {};
-
-function getAudio(name) {
-  if (!audioCache[name]) {
-    const a = new Audio(SOUND_URLS[name]);
-    a.preload = 'none';
-    audioCache[name] = a;
-  }
-  return audioCache[name];
+// Play a single tone: freq (Hz), dur (s), type, volume 0-1, delay (s)
+function tone(freq, dur, type = 'sine', vol = 0.4, delay = 0) {
+  try {
+    const ctx = getAudioCtx();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+    const v = Math.max(0, Math.min(1, vol * sfxVolume));
+    gain.gain.setValueAtTime(v, ctx.currentTime + delay);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delay + dur);
+    osc.start(ctx.currentTime + delay);
+    osc.stop(ctx.currentTime + delay + dur + 0.02);
+  } catch (e) {}
 }
 
 function playSound(name) {
   try {
-    const a = getAudio(name);
-    a.volume = Math.max(0, Math.min(1, sfxVolume));
-    a.currentTime = 0;
-    a.play().catch(() => {}); // Ignore autoplay restrictions
+    switch (name) {
+      case 'submit':
+        tone(660, 0.10, 'sine', 0.30);
+        break;
+      case 'match':
+        tone(523, 0.18, 'sine', 0.40);
+        tone(659, 0.22, 'sine', 0.40, 0.13);
+        tone(784, 0.30, 'sine', 0.35, 0.26);
+        break;
+      case 'allMatch':
+        [523, 659, 784, 1047, 1319].forEach((f, i) =>
+          tone(f, 0.4, 'sine', 0.50, i * 0.09));
+        break;
+      case 'noMatch':
+        tone(330, 0.15, 'sawtooth', 0.20);
+        tone(220, 0.28, 'sawtooth', 0.18, 0.12);
+        break;
+      case 'tick':
+        tone(1100, 0.04, 'square', 0.10);
+        break;
+      case 'start':
+        [440, 554, 659, 880].forEach((f, i) =>
+          tone(f, 0.22, 'sine', 0.38, i * 0.08));
+        break;
+      case 'gameOver':
+        [784, 659, 523, 392].forEach((f, i) =>
+          tone(f, 0.38, 'sine', 0.45, i * 0.19));
+        break;
+    }
   } catch (e) {}
 }
 

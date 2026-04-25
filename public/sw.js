@@ -1,4 +1,4 @@
-const CACHE_NAME = 'assoziation-v1';
+const CACHE_NAME = 'assoziation-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -25,32 +25,21 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for socket.io, cache-first for static assets
+// Fetch: network-first for everything (always get fresh JS/CSS on update)
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // Always network for socket.io
   if (url.pathname.startsWith('/socket.io')) return;
 
-  // Network-first for HTML (so updates are picked up)
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match('/index.html'))
-    );
-    return;
-  }
-
-  // Cache-first for other static assets
+  // Network-first for all static assets: try network, fall back to cache
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-        }
-        return response;
-      });
-    })
+    fetch(event.request).then(response => {
+      if (response.ok) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+      }
+      return response;
+    }).catch(() => caches.match(event.request))
   );
 });
