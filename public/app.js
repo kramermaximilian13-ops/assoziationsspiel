@@ -102,49 +102,52 @@ function playSound(name) {
   } catch (e) {}
 }
 
-// ─── BACKGROUND MUSIC ─────────────────────────────────────────────────────────
+// ─── BACKGROUND MUSIC PLAYLIST ────────────────────────────────────────────────
+// Tracks werden von GitHub geliefert — einfach MP3s in /music/ hochladen
+// und hier die Dateinamen eintragen.
+const MUSIC_BASE = 'https://raw.githubusercontent.com/kramermaximilian13-ops/assoziationsspiel/main/music/';
+const PLAYLIST = [
+  'track1.mp3',
+  'track2.mp3',
+  'track3.mp3',
+  'track4.mp3',
+  'track5.mp3',
+  'track6.mp3',
+];
+
+let currentTrackIndex = 0;
 const bgMusic = new Audio();
-bgMusic.loop = true;
-let bgMusicPlaying = false;
+bgMusic.volume = musicVolume;
 
-const musicFileInput = document.getElementById('music-file-input');
-const btnChooseMusic = document.getElementById('btn-choose-music');
-const musicControls  = document.getElementById('music-controls');
-const musicFilename  = document.getElementById('music-filename');
-const btnMusicToggle = document.getElementById('btn-music-toggle');
-
-btnChooseMusic.addEventListener('click', () => musicFileInput.click());
-
-musicFileInput.addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const url = URL.createObjectURL(file);
-  bgMusic.src = url;
-  bgMusic.volume = musicVolume;
-  musicFilename.textContent = file.name.length > 24 ? file.name.slice(0, 21) + '…' : file.name;
-  musicControls.classList.remove('hidden');
-  bgMusic.play().then(() => {
-    bgMusicPlaying = true;
-    updateMusicButton();
-  }).catch(() => {
-    bgMusicPlaying = false;
-    updateMusicButton();
-  });
-});
-
-btnMusicToggle.addEventListener('click', () => {
-  if (bgMusicPlaying) {
-    bgMusic.pause();
-    bgMusicPlaying = false;
-  } else {
-    bgMusic.play().then(() => { bgMusicPlaying = true; }).catch(() => {});
+function shufflePlaylist() {
+  for (let i = PLAYLIST.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [PLAYLIST[i], PLAYLIST[j]] = [PLAYLIST[j], PLAYLIST[i]];
   }
-  updateMusicButton();
+}
+
+function playNextTrack() {
+  if (PLAYLIST.length === 0) return;
+  bgMusic.src = MUSIC_BASE + PLAYLIST[currentTrackIndex];
+  bgMusic.volume = musicVolume;
+  bgMusic.play().catch(() => {});
+}
+
+bgMusic.addEventListener('ended', () => {
+  currentTrackIndex = (currentTrackIndex + 1) % PLAYLIST.length;
+  playNextTrack();
 });
 
-function updateMusicButton() {
-  btnMusicToggle.textContent = bgMusicPlaying ? '⏸ Pausieren' : '▶ Abspielen';
+// Musik startet beim ersten Klick/Tippen (Browser-Autoplay-Regel)
+function startMusicOnInteraction() {
+  if (PLAYLIST.length === 0) return;
+  shufflePlaylist();
+  playNextTrack();
+  document.removeEventListener('click', startMusicOnInteraction);
+  document.removeEventListener('keydown', startMusicOnInteraction);
 }
+document.addEventListener('click', startMusicOnInteraction);
+document.addEventListener('keydown', startMusicOnInteraction);
 
 // ─── AUDIO PANEL ──────────────────────────────────────────────────────────────
 const btnAudioFab   = document.getElementById('btn-audio-fab');
@@ -170,6 +173,10 @@ musicSlider.addEventListener('input', e => {
   musicVolume = parseInt(e.target.value) / 100;
   musicVolNum.textContent = e.target.value + '%';
   bgMusic.volume = musicVolume;
+  if (PLAYLIST.length > 0 && !bgMusic.src) {
+    shufflePlaylist();
+    playNextTrack();
+  }
 });
 
 // ─── LANDING SCREEN ───────────────────────────────────────────────────────────

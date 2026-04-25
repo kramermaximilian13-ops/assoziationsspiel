@@ -12,12 +12,11 @@ echo "📦 Änderungen hinzufügen..."
 git add -A
 
 echo "💾 Commit erstellen..."
-git commit -m "fix: fuzzy matching, Web Audio sounds, visible sound button, cache bust
+git commit -m "feat: background music playlist (6 tracks)
 
-- Fuzzy word matching: typos and plurals now count as the same answer
-- Sounds now use Web Audio API (no CDN dependency, always works)
-- Sound button moved to top-right, always visible on all screens
-- Service worker cache bumped to v3 (forces fresh JS/CSS for all users)"
+- Added 6 MP3 tracks to music/ folder (track1-track6.mp3)
+- PLAYLIST in app.js now references all 6 tracks
+- Music auto-starts on first user interaction, loops through all tracks shuffled"
 
 echo ""
 echo "📤 Push zu GitHub..."
