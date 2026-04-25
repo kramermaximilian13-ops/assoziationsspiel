@@ -38,7 +38,6 @@
       </div>
     </div>
 
-    <!-- Join form (hidden by default) -->
     <div id="join-form" class="card hidden">
       <div class="input-group">
         <label for="join-code">Raum-Code</label>
@@ -95,6 +94,18 @@
         </div>
       </div>
 
+      <!-- Input timer selector -->
+      <div id="timer-group" class="input-group">
+        <label>Eingabe-Timer <span class="hint">(nach erstem Eintrag)</span></label>
+        <div class="timer-selector" id="timer-selector">
+          <button class="timer-btn" data-ms="10000">10s</button>
+          <button class="timer-btn active" data-ms="20000">20s</button>
+          <button class="timer-btn" data-ms="30000">30s</button>
+          <button class="timer-btn" data-ms="60000">60s</button>
+          <button class="timer-btn" data-ms="0">∞</button>
+        </div>
+      </div>
+
       <div class="input-group">
         <label>Eigene Kategorien <span class="hint">(optional)</span></label>
         <div class="tag-input-row">
@@ -115,7 +126,62 @@
 
 
   <!-- ═══════════════════════════════════════════════
-       SCREEN 3: GAME (Input Phase)
+       SCREEN 3: VOTING (Kategorie wählen)
+  ════════════════════════════════════════════════ -->
+  <div id="screen-voting" class="screen">
+    <div class="round-header">
+      <div class="round-header-row">
+        <span id="voting-round-badge" class="round-pill">Runde 1</span>
+        <span class="game-mode-pill mode-points">🏆 Punkte</span>
+      </div>
+      <div id="voting-progress-wrap" style="width:100%;height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+        <div id="voting-progress-bar" style="height:100%;background:var(--primary);transition:width 0.4s;"></div>
+      </div>
+    </div>
+
+    <div class="voting-hero">
+      <div class="voting-icon">🗳️</div>
+      <h2>Welche Kategorie?</h2>
+      <p class="voting-subtitle">Stimmt ab — die meisten Votes gewinnen!</p>
+    </div>
+
+    <!-- Voting countdown -->
+    <div id="voting-timer-wrap" class="countdown-wrap">
+      <div class="countdown-bar-track">
+        <div id="voting-timer-fill" class="countdown-fill"></div>
+      </div>
+      <span id="voting-timer-num" class="countdown-num">10</span>
+    </div>
+
+    <!-- 3 options -->
+    <div id="voting-options" class="voting-options">
+      <button class="voting-option" data-idx="0">
+        <span class="option-text"></span>
+        <div class="vote-bar-wrap"><div class="vote-bar"></div></div>
+        <span class="option-votes"></span>
+      </button>
+      <button class="voting-option" data-idx="1">
+        <span class="option-text"></span>
+        <div class="vote-bar-wrap"><div class="vote-bar"></div></div>
+        <span class="option-votes"></span>
+      </button>
+      <button class="voting-option" data-idx="2">
+        <span class="option-text"></span>
+        <div class="vote-bar-wrap"><div class="vote-bar"></div></div>
+        <span class="option-votes"></span>
+      </button>
+    </div>
+
+    <div id="voting-status" class="status-row hidden">
+      <div class="submitted-pill">✓ Abgestimmt</div>
+    </div>
+
+    <p id="voting-count" class="waiting-label">0 / 0 haben abgestimmt</p>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       SCREEN 4: GAME (Input Phase)
   ════════════════════════════════════════════════ -->
   <div id="screen-game" class="screen">
     <div class="round-header">
@@ -131,7 +197,7 @@
       <h2 id="game-category" class="category-text"></h2>
     </div>
 
-    <!-- 10-second round countdown (appears after first player submits) -->
+    <!-- Round countdown -->
     <div id="game-timer-wrap" class="countdown-wrap hidden">
       <div class="countdown-bar-track">
         <div id="game-timer-fill" class="countdown-fill"></div>
@@ -144,9 +210,7 @@
       <div class="answer-input-wrap">
         <input id="word-input" type="text" placeholder="Dein Begriff…"
                maxlength="40" autocomplete="off" autocapitalize="off" />
-        <button id="btn-submit" class="btn btn-primary btn-submit">
-          ✓
-        </button>
+        <button id="btn-submit" class="btn btn-primary btn-submit">✓</button>
       </div>
     </div>
 
@@ -164,7 +228,7 @@
 
 
   <!-- ═══════════════════════════════════════════════
-       SCREEN 4: REVEAL
+       SCREEN 5: REVEAL
   ════════════════════════════════════════════════ -->
   <div id="screen-reveal" class="screen">
     <div class="reveal-header">
@@ -197,6 +261,16 @@
       <ul id="reveal-scores" class="score-list"></ul>
     </div>
 
+    <!-- Emoji Reactions -->
+    <div class="reaction-bar">
+      <button class="reaction-btn" data-emoji="🔥">🔥</button>
+      <button class="reaction-btn" data-emoji="😂">😂</button>
+      <button class="reaction-btn" data-emoji="👏">👏</button>
+      <button class="reaction-btn" data-emoji="😅">😅</button>
+      <button class="reaction-btn" data-emoji="🎉">🎉</button>
+      <button class="reaction-btn" data-emoji="💀">💀</button>
+    </div>
+
     <!-- Auto-advance countdown -->
     <div id="reveal-countdown-wrap" class="countdown-wrap hidden">
       <div class="countdown-bar-track">
@@ -213,7 +287,7 @@
 
 
   <!-- ═══════════════════════════════════════════════
-       SCREEN 5: GAME OVER
+       SCREEN 6: GAME OVER
   ════════════════════════════════════════════════ -->
   <div id="screen-gameover" class="screen">
     <div class="gameover-hero">
@@ -223,6 +297,16 @@
     </div>
 
     <ul id="final-scores" class="final-score-list"></ul>
+
+    <!-- Reactions on game over screen too -->
+    <div class="reaction-bar">
+      <button class="reaction-btn" data-emoji="🔥">🔥</button>
+      <button class="reaction-btn" data-emoji="😂">😂</button>
+      <button class="reaction-btn" data-emoji="👏">👏</button>
+      <button class="reaction-btn" data-emoji="😅">😅</button>
+      <button class="reaction-btn" data-emoji="🎉">🎉</button>
+      <button class="reaction-btn" data-emoji="💀">💀</button>
+    </div>
 
     <div id="round-history-section">
       <h3>Rundenübersicht</h3>
@@ -234,6 +318,12 @@
     </button>
     <p id="gameover-waiting" class="waiting-msg hidden">Warten auf den Host…</p>
   </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       FLOATING EMOJI OVERLAY (global, all screens)
+  ════════════════════════════════════════════════ -->
+  <div id="emoji-overlay" class="emoji-overlay"></div>
 
 
   <!-- ═══════════════════════════════════════════════

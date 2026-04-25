@@ -1,4 +1,4 @@
-const CACHE_NAME = 'assoziation-v3';
+const CACHE_NAME = 'assoziation-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

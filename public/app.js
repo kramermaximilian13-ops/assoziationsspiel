@@ -179,6 +179,115 @@ musicSlider.addEventListener('input', e => {
   }
 });
 
+// ─── EMOJI REACTIONS ──────────────────────────────────────────────────────────
+const emojiOverlay = document.getElementById('emoji-overlay');
+
+function showFloatingEmoji(emoji, name) {
+  const el = document.createElement('div');
+  el.className = 'floating-emoji';
+  // Random horizontal position
+  const left = 8 + Math.random() * 80;
+  el.style.left = left + '%';
+  el.innerHTML = `<span class="fe-emoji">${emoji}</span><span class="fe-name">${escapeHtml(name)}</span>`;
+  emojiOverlay.appendChild(el);
+  el.addEventListener('animationend', () => el.remove());
+}
+
+// Reaction buttons — use event delegation on the whole document
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.reaction-btn');
+  if (!btn || !state.roomCode) return;
+  const emoji = btn.dataset.emoji;
+  if (!emoji) return;
+  socket.emit('send-reaction', { code: state.roomCode, emoji });
+  // Show immediately for sender too
+  showFloatingEmoji(emoji, 'Du');
+});
+
+// ─── TIMER SELECTOR (lobby, host only) ───────────────────────────────────────
+const timerSelector = document.getElementById('timer-selector');
+timerSelector.querySelectorAll('.timer-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const ms = parseInt(btn.dataset.ms);
+    timerSelector.querySelectorAll('.timer-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    socket.emit('set-input-timer', { code: state.roomCode, ms });
+  });
+});
+
+// ─── VOTING SCREEN ────────────────────────────────────────────────────────────
+const votingRoundBadge  = document.getElementById('voting-round-badge');
+const votingProgressBar = document.getElementById('voting-progress-bar');
+const votingTimerWrap   = document.getElementById('voting-timer-wrap');
+const votingTimerFill   = document.getElementById('voting-timer-fill');
+const votingTimerNum    = document.getElementById('voting-timer-num');
+const votingOptions     = document.getElementById('voting-options').querySelectorAll('.voting-option');
+const votingStatus      = document.getElementById('voting-status');
+const votingCount       = document.getElementById('voting-count');
+
+let votingCountdownTimer = null;
+let myVote = null;
+
+function stopVotingCountdown() {
+  clearInterval(votingCountdownTimer);
+  votingCountdownTimer = null;
+}
+
+function startVotingCountdown(seconds) {
+  stopVotingCountdown();
+  votingTimerNum.textContent = seconds;
+  votingTimerFill.style.transition = 'none';
+  votingTimerFill.style.width = '100%';
+  setTimeout(() => {
+    votingTimerFill.style.transition = `width ${seconds}s linear`;
+    votingTimerFill.style.width = '0%';
+  }, 60);
+  let secs = seconds;
+  votingCountdownTimer = setInterval(() => {
+    secs--;
+    votingTimerNum.textContent = secs;
+    if (secs <= 3 && secs > 0) playSound('tick');
+    if (secs <= 0) stopVotingCountdown();
+  }, 1000);
+}
+
+function setupVoting({ round, maxRounds, candidates, seconds }) {
+  myVote = null;
+  votingRoundBadge.textContent = `Runde ${round} / ${maxRounds}`;
+  if (votingProgressBar) {
+    votingProgressBar.style.width = `${((round - 1) / maxRounds) * 100}%`;
+  }
+
+  votingOptions.forEach((btn, i) => {
+    const textEl = btn.querySelector('.option-text');
+    const voteBar = btn.querySelector('.vote-bar');
+    const votesEl = btn.querySelector('.option-votes');
+    if (textEl) textEl.textContent = candidates[i] || '—';
+    if (voteBar) voteBar.style.width = '0%';
+    if (votesEl) votesEl.textContent = '';
+    btn.classList.remove('selected', 'winner');
+    btn.disabled = false;
+  });
+
+  votingStatus.classList.add('hidden');
+  votingCount.textContent = `0 / ${0} haben abgestimmt`;
+
+  showScreen('screen-voting');
+  startVotingCountdown(seconds);
+}
+
+votingOptions.forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (myVote !== null) return;
+    const idx = parseInt(btn.dataset.idx);
+    myVote = idx;
+    votingOptions.forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    votingStatus.classList.remove('hidden');
+    socket.emit('cast-vote', { code: state.roomCode, candidateIdx: idx });
+  });
+});
+
 // ─── LANDING SCREEN ───────────────────────────────────────────────────────────
 const landingName   = document.getElementById('landing-name');
 const btnCreate     = document.getElementById('btn-create');
@@ -286,11 +395,13 @@ modeSelector.querySelectorAll('.mode-btn').forEach(btn => {
     modeSelector.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
 
-    // Toggle rounds stepper visibility
+    // Toggle rounds stepper + timer visibility
     if (mode === 'all-for-one') {
       roundsGroup.classList.add('hidden');
+      document.getElementById('timer-group').classList.add('hidden');
     } else {
       roundsGroup.classList.remove('hidden');
+      document.getElementById('timer-group').classList.remove('hidden');
     }
 
     // Tell server about the mode change
@@ -745,8 +856,10 @@ socket.on('game-mode-updated', ({ gameMode }) => {
     });
     if (gameMode === 'all-for-one') {
       roundsGroup.classList.add('hidden');
+      document.getElementById('timer-group').classList.add('hidden');
     } else {
       roundsGroup.classList.remove('hidden');
+      document.getElementById('timer-group').classList.remove('hidden');
     }
   }
 });
@@ -792,6 +905,58 @@ socket.on('game-over', (data) => {
   stopRevealCountdown();
   stopGameCountdown();
   renderGameOver(data);
+});
+
+// ── NEW: voting events ──────────────────────────────────────────────────────
+socket.on('voting-start', (data) => {
+  stopRevealCountdown();
+  stopGameCountdown();
+  setupVoting(data);
+});
+
+socket.on('vote-count', ({ votes, total }) => {
+  votingCount.textContent = `${votes} / ${total} haben abgestimmt`;
+});
+
+socket.on('voting-result', (data) => {
+  stopVotingCountdown();
+  // Show winner briefly, then transition to game screen
+  const { winnerIdx, counts, category } = data;
+  const total = counts.reduce((a, b) => a + b, 0);
+
+  // Update vote bars to show final result
+  votingOptions.forEach((btn, i) => {
+    const voteBar = btn.querySelector('.vote-bar');
+    const votesEl = btn.querySelector('.option-votes');
+    const pct = total > 0 ? Math.round((counts[i] / total) * 100) : 0;
+    if (voteBar) voteBar.style.width = pct + '%';
+    if (votesEl) votesEl.textContent = `${counts[i]} Stimme${counts[i] !== 1 ? 'n' : ''}`;
+    btn.classList.remove('selected');
+    if (i === winnerIdx) btn.classList.add('winner');
+    btn.disabled = true;
+  });
+
+  // Brief pause then start game round
+  setTimeout(() => {
+    state.players = data.players;
+    if (data.gameMode) state.gameMode = data.gameMode;
+    setupGameRound(data);
+  }, 1200);
+});
+
+// ── NEW: reactions ──────────────────────────────────────────────────────────
+socket.on('reaction-received', ({ emoji, name }) => {
+  showFloatingEmoji(emoji, name);
+});
+
+// ── NEW: input timer updated ────────────────────────────────────────────────
+socket.on('input-timer-updated', ({ inputTimerMs }) => {
+  // Sync timer selector UI for all clients (including host on reconnect)
+  if (state.isHost) {
+    timerSelector.querySelectorAll('.timer-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.ms) === inputTimerMs);
+    });
+  }
 });
 
 socket.on('back-to-lobby', ({ room }) => {

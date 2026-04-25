@@ -786,6 +786,178 @@ input[type="text"]:focus {
   border: none;
 }
 
+/* ─── Timer Selector ──────────────────────────────────────────────────────── */
+.timer-selector {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.timer-btn {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all var(--transition);
+  font-family: var(--font);
+}
+.timer-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.timer-btn:hover:not(.active) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ─── Voting Screen ───────────────────────────────────────────────────────── */
+.voting-hero {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+.voting-icon {
+  font-size: 2.4rem;
+  margin-bottom: 6px;
+}
+.voting-hero h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+.voting-subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+.voting-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0;
+}
+.voting-option {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px 12px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition), background var(--transition), transform 0.1s;
+  font-family: var(--font);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.voting-option:hover:not(:disabled) {
+  border-color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.voting-option.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+.voting-option.winner {
+  border-color: var(--success);
+  background: #f0fdf4;
+}
+.voting-option:disabled {
+  cursor: default;
+}
+.option-text {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.vote-bar-wrap {
+  width: 100%;
+  height: 5px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.vote-bar {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 99px;
+  width: 0%;
+  transition: width 0.5s ease;
+}
+.voting-option.selected .vote-bar { background: var(--primary); }
+.voting-option.winner .vote-bar   { background: var(--success); }
+.option-votes {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* ─── Emoji Reactions ─────────────────────────────────────────────────────── */
+.reaction-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.reaction-btn {
+  font-size: 1.5rem;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s, background var(--transition), border-color var(--transition);
+  box-shadow: var(--shadow);
+  line-height: 1;
+}
+.reaction-btn:hover  { background: var(--primary-light); border-color: var(--primary); }
+.reaction-btn:active { transform: scale(0.82); }
+
+/* ─── Floating Emoji Overlay ──────────────────────────────────────────────── */
+.emoji-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+}
+.floating-emoji {
+  position: absolute;
+  bottom: -70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  animation: floatUp 3.2s ease-out forwards;
+  user-select: none;
+}
+.floating-emoji .fe-emoji {
+  font-size: 2.4rem;
+  line-height: 1;
+}
+.floating-emoji .fe-name {
+  font-size: 0.7rem;
+  color: #fff;
+  background: rgba(0,0,0,0.45);
+  border-radius: 8px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+@keyframes floatUp {
+  0%   { transform: translateY(0) scale(1);    opacity: 1; }
+  60%  { opacity: 1; }
+  100% { transform: translateY(-92vh) scale(1.15); opacity: 0; }
+}
+
 /* ─── Utility ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .waiting-msg {

@@ -12,11 +12,12 @@ echo "📦 Änderungen hinzufügen..."
 git add -A
 
 echo "💾 Commit erstellen..."
-git commit -m "feat: background music playlist (6 tracks)
+git commit -m "feat: emoji reactions, category voting, configurable timer
 
-- Added 6 MP3 tracks to music/ folder (track1-track6.mp3)
-- PLAYLIST in app.js now references all 6 tracks
-- Music auto-starts on first user interaction, loops through all tracks shuffled"
+- Kategorie-Abstimmung: 3 zufällige Kategorien zur Abstimmung pro Runde (Punkte-Modus)
+- Emoji Reaktionen: 6 Emojis (🔥😂👏😅🎉💀) auf Reveal- und Game-Over-Screen
+- Konfigurierbarer Eingabe-Timer: 10s / 20s / 30s / 60s / Unbegrenzt
+- Service Worker auf v4 (zwingt frisches JS/CSS)"
 
 echo ""
 echo "📤 Push zu GitHub..."
