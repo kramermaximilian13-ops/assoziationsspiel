@@ -4,9 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Assoziationsspiel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#6C63FF" />
+  <meta name="theme-color" content="#1a1828" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Assoziation" />
@@ -19,7 +22,7 @@
   ════════════════════════════════════════════════ -->
   <div id="screen-landing" class="screen active">
     <div class="landing-hero">
-      <div class="logo-mark">🧠</div>
+      <div class="logo-mark">𝔸</div>
       <h1>Assoziations&shy;spiel</h1>
       <p class="subtitle">Findet gemeinsam denselben Begriff!</p>
     </div>
@@ -30,10 +33,10 @@
       </div>
       <div class="button-stack">
         <button id="btn-create" class="btn btn-primary btn-large">
-          <span class="btn-icon">✦</span> Raum erstellen
+          Raum erstellen
         </button>
         <button id="btn-join-show" class="btn btn-secondary btn-large">
-          <span class="btn-icon">→</span> Raum beitreten
+          Raum beitreten
         </button>
       </div>
     </div>
@@ -60,6 +63,7 @@
         Code: <strong id="lobby-code"></strong>
         <button id="btn-copy-code" class="icon-btn" title="Code kopieren">⧉</button>
       </div>
+      <button id="btn-share-link" class="btn btn-ghost btn-sm">🔗 Teilen</button>
     </div>
 
     <h2 class="section-title">Spieler <span id="player-count" class="badge">0</span></h2>
@@ -220,7 +224,7 @@
 
     <div class="waiting-grid">
       <p class="waiting-label">Warten auf Mitspieler…</p>
-      <div id="answer-dots" class="dot-row"></div>
+      <div id="answer-dots" class="player-chips"></div>
     </div>
 
     <p id="game-error" class="error-msg hidden"></p>

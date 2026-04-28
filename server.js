@@ -22,6 +22,7 @@ const rooms             = {};
 const roundTimers       = new Map();
 const votingTimers      = new Map();
 const gracePeriodTimers = new Map();
+const reactionTimestamps = new Map();
 
 // ─── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -141,7 +142,8 @@ function startVoting(room) {
     round: room.round,
     maxRounds: room.maxRounds,
     candidates,
-    seconds: VOTING_TIMER_MS / 1000
+    seconds: VOTING_TIMER_MS / 1000,
+    playerCount: room.players.length
   });
 
   const timerId = setTimeout(() => {
@@ -264,9 +266,12 @@ io.on('connection', (socket) => {
     let code;
     do { code = generateCode(); } while (rooms[code]);
 
+    const cleanName = playerName.trim().slice(0, 20);
+    if (!cleanName) return socket.emit('error', { message: 'Bitte gib deinen Namen ein.' });
+
     const room = {
       code, host: socket.id,
-      players: [{ id: socket.id, name: playerName.trim().slice(0, 20), score: 0, ready: false }],
+      players: [{ id: socket.id, name: cleanName, score: 0, ready: false }],
       disconnectedPlayers: [],
       phase: 'lobby', round: 0, maxRounds: 10,
       gameMode: 'points', inputTimerMs: 20_000,
@@ -288,6 +293,7 @@ io.on('connection', (socket) => {
     if (!room) return socket.emit('error', { message: 'Raum nicht gefunden.' });
 
     const cleanName = playerName.trim().slice(0, 20);
+    if (!cleanName) return socket.emit('error', { message: 'Bitte gib deinen Namen ein.' });
 
     // Reconnect: active player with same name
     const activePlayer = room.players.find(p => p.name === cleanName && p.id !== socket.id);
@@ -370,6 +376,9 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = room.players.find(p => p.id === socket.id);
     if (!player) return;
+    const last = reactionTimestamps.get(socket.id) || 0;
+    if (Date.now() - last < 500) return;
+    reactionTimestamps.set(socket.id, Date.now());
     const safeEmoji = ALLOWED_EMOJIS.includes(emoji) ? emoji : '🔥';
     io.to(code).emit('reaction-received', { emoji: safeEmoji, name: player.name });
   });
@@ -444,7 +453,7 @@ io.on('connection', (socket) => {
       io.to(code).emit('round-timer-start', { seconds: room.inputTimerMs / 1000 });
     }
 
-    io.to(code).emit('answer-count', { answered: answeredCount, total: room.players.length });
+    io.to(code).emit('answer-count', { answered: answeredCount, total: room.players.length, answeredIds: Object.keys(room.answers) });
 
     if (answeredCount >= room.players.length) {
       clearRoundTimer(code);
@@ -468,7 +477,7 @@ io.on('connection', (socket) => {
 
   // ── PLAY AGAIN ───────────────────────────────────────────────────────────────
 
-  socket.on('play-again', ({ code }) => {
+  socket.on('play-again', async ({ code }) => {
     const room = getRoom(code);
     if (!room || room.host !== socket.id) return;
     clearRoundTimer(code);
@@ -477,7 +486,10 @@ io.on('connection', (socket) => {
     room.usedCategories = []; room.roundHistory = [];
     room.votingCandidates = []; room.votes = {};
     room.players.forEach(p => { p.score = 0; p.ready = false; });
-    io.to(code).emit('back-to-lobby', { room: roomView(room, socket.id) });
+    const sockets = await io.in(code).fetchSockets();
+    for (const s of sockets) {
+      s.emit('back-to-lobby', { room: roomView(room, s.id) });
+    }
   });
 
   // ── DISCONNECT ───────────────────────────────────────────────────────────────

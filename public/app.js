@@ -16,6 +16,17 @@ let state = {
   gameMode:  'points'   // 'points' | 'all-for-one'
 };
 
+let prevScores = {};
+
+// ─── Avatar Color ─────────────────────────────────────────────────────────────
+function getAvatarColorClass(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) & 0xffffffff;
+  }
+  return `avatar-c${Math.abs(hash) % 8}`;
+}
+
 // ─── Screen Management ─────────────────────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -251,7 +262,7 @@ function startVotingCountdown(seconds) {
   }, 1000);
 }
 
-function setupVoting({ round, maxRounds, candidates, seconds }) {
+function setupVoting({ round, maxRounds, candidates, seconds, playerCount }) {
   myVote = null;
   votingRoundBadge.textContent = `Runde ${round} / ${maxRounds}`;
   if (votingProgressBar) {
@@ -270,7 +281,20 @@ function setupVoting({ round, maxRounds, candidates, seconds }) {
   });
 
   votingStatus.classList.add('hidden');
-  votingCount.textContent = `0 / ${0} haben abgestimmt`;
+  const total = playerCount || state.players.length;
+  votingCount.textContent = `0 / ${total} haben abgestimmt`;
+
+  // Update game mode pill
+  const modePill = document.querySelector('#screen-voting .game-mode-pill');
+  if (modePill) {
+    if (state.gameMode === 'all-for-one') {
+      modePill.textContent = '🤝 All for One';
+      modePill.className = 'game-mode-pill mode-afo';
+    } else {
+      modePill.textContent = '🏆 Punkte';
+      modePill.className = 'game-mode-pill mode-points';
+    }
+  }
 
   showScreen('screen-voting');
   startVotingCountdown(seconds);
@@ -314,6 +338,18 @@ joinCodeInput.addEventListener('input', e => {
   e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 });
 
+// URL-Parameter ?code= automatisch ins Beitrittsformular einfügen
+{
+  const codeFromUrl = new URLSearchParams(location.search).get('code');
+  if (codeFromUrl) {
+    const clean = codeFromUrl.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    if (clean.length === 5) {
+      joinCodeInput.value = clean;
+      joinForm.classList.remove('hidden');
+    }
+  }
+}
+
 function doJoin() {
   const name = landingName.value.trim();
   const code = joinCodeInput.value.trim().toUpperCase();
@@ -346,6 +382,17 @@ btnCopyCode.addEventListener('click', () => {
   navigator.clipboard.writeText(state.roomCode).then(() => {
     btnCopyCode.textContent = '✓';
     setTimeout(() => btnCopyCode.textContent = '⧉', 1500);
+  });
+});
+
+document.getElementById('btn-share-link').addEventListener('click', () => {
+  const url = `${location.origin}${location.pathname}?code=${state.roomCode}`;
+  const btn = document.getElementById('btn-share-link');
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = '🔗 Teilen'; }, 2000);
+  }).catch(() => {
+    prompt('Link kopieren:', url);
   });
 });
 
@@ -427,8 +474,9 @@ function renderPlayerList(players, hostId) {
     const initial = p.name.charAt(0).toUpperCase();
     const isHost  = p.id === hostId;
     const isYou   = p.id === socket.id;
+    const colorClass = getAvatarColorClass(p.name);
     li.innerHTML = `
-      <div class="player-avatar">${initial}</div>
+      <div class="player-avatar ${colorClass}">${initial}</div>
       <span class="player-name">${escapeHtml(p.name)}</span>
       ${isHost ? '<span class="host-tag">Host</span>' : ''}
       ${isYou  ? '<span class="you-tag">Du</span>' : ''}
@@ -523,12 +571,15 @@ function setupGameRound({ round, maxRounds, category, players, gameMode }) {
   btnSubmit.disabled = false;
   submittedStatus.classList.add('hidden');
 
-  // Render answer dots
+  // Render player chips
   answerDots.innerHTML = '';
-  players.forEach(() => {
-    const dot = document.createElement('div');
-    dot.className = 'dot';
-    answerDots.appendChild(dot);
+  players.forEach(p => {
+    const chip = document.createElement('div');
+    chip.className = 'player-chip';
+    chip.dataset.playerId = p.id;
+    const colorClass = getAvatarColorClass(p.name);
+    chip.innerHTML = `<span class="chip-avatar ${colorClass}">${escapeHtml(p.name.charAt(0).toUpperCase())}</span><span class="chip-name">${escapeHtml(p.name)}</span>`;
+    answerDots.appendChild(chip);
   });
 
   showScreen('screen-game');
@@ -661,10 +712,12 @@ function renderReveal(data) {
     const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
     revealScores.innerHTML = '';
     sortedPlayers.forEach(p => {
+      const delta = p.score - (prevScores[p.id] || 0);
       const li = document.createElement('li');
       li.className = 'score-item';
       li.innerHTML = `
         <span class="score-name">${escapeHtml(p.name)}</span>
+        ${delta > 0 ? `<span class="score-delta">+${delta}</span>` : ''}
         <span class="score-pts">${p.score} Pkt.</span>
       `;
       revealScores.appendChild(li);
@@ -835,13 +888,20 @@ socket.on('player-left', ({ players }) => {
 socket.on('host-changed', ({ newHost }) => {
   if (newHost === socket.id) {
     state.isHost = true;
-    hostControls.classList.remove('hidden');
-    lobbyWaiting.classList.add('hidden');
-    lobbyModeBadge.classList.add('hidden');
-    btnNextRound.classList.remove('hidden');
-    btnPlayAgain.classList.remove('hidden');
-    revealWaiting.classList.add('hidden');
-    gameoverWaiting.classList.add('hidden');
+    const activeScreen = document.querySelector('.screen.active')?.id;
+    if (activeScreen === 'screen-lobby') {
+      hostControls.classList.remove('hidden');
+      lobbyWaiting.classList.add('hidden');
+      lobbyModeBadge.classList.add('hidden');
+    }
+    if (activeScreen === 'screen-reveal') {
+      btnNextRound.classList.remove('hidden');
+      revealWaiting.classList.add('hidden');
+    }
+    if (activeScreen === 'screen-gameover') {
+      btnPlayAgain.classList.remove('hidden');
+      gameoverWaiting.classList.add('hidden');
+    }
   }
   renderPlayerList(state.players, newHost);
 });
@@ -875,11 +935,9 @@ socket.on('game-started', (data) => {
   setupGameRound(data);
 });
 
-socket.on('answer-count', ({ answered, total }) => {
-  const dots = answerDots.querySelectorAll('.dot');
-  dots.forEach((dot, i) => {
-    if (i < answered) dot.classList.add('answered');
-    else dot.classList.remove('answered');
+socket.on('answer-count', ({ answered, total, answeredIds }) => {
+  answerDots.querySelectorAll('.player-chip').forEach(chip => {
+    chip.classList.toggle('answered', answeredIds ? answeredIds.includes(chip.dataset.playerId) : false);
   });
 });
 
@@ -889,6 +947,8 @@ socket.on('round-timer-start', ({ seconds }) => {
 
 socket.on('round-result', (data) => {
   stopGameCountdown();
+  prevScores = {};
+  state.players.forEach(p => { prevScores[p.id] = p.score; });
   state.players = data.players;
   renderReveal(data);
 });

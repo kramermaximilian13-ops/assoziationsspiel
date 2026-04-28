@@ -182,7 +182,7 @@ const CATEGORIES = [
 
   // ── Alltag & Lifestyle ────────────────────────────────────────────────────
   "Berufe",
-  "Schuldfächer",
+  "Schulfächer",
   "Kleidungsstücke",
   "Möbelstücke",
   "Haushaltsgeräte",
